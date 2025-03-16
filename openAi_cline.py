@@ -1,118 +1,155 @@
-from typing import Callable, Any, Tuple, Dict, List
-from openai import OpenAI  # Assuming you're using the OpenAI library
+from typing import Callable, Any, Tuple, Dict, List, Optional, TypeVar
+from openai import OpenAI
+from openai.types.chat import ChatCompletionChunk
 import os
+import logging
+from dataclasses import dataclass
+from pathlib import Path
 
-
-# api_key = os.getenv("DEEP_SEEK_API_KEY"), DEEP_SEEK
-# base_url = "https://api.deepseek.com/v1"
-# model_name = "deepseek-reasoner"
-
-# api_key = os.getenv("API_302_KEY"), api.302
-base_url = "https://api.302.ai/v1/chat/completions"
-model_name = "gemini-2.0-pro-exp-02-05"
-
-# api_key = os.getenv("DASHSCOPE_API_KEY"), 阿里
-# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-# model_name = "qwq-32b"
-
-# api_key = os.getenv("NVIDIA_API_KEY"), #英伟达
-# base_url = "https://integrate.api.nvidia.com/v1"
-# model_name = "deepseek-ai/deepseek-r1"
-
-
-client = OpenAI(
-    # 如果没有配置环境变量，请用百炼API Key替换：api_key="sk-xxx"
-    api_key=os.getenv("API_302_KEY"),
-    base_url=base_url
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
+
+T = TypeVar('T')
+
+@dataclass
+class ModelConfig:
+    """大模型配置类"""
+    provider: str
+    base_url: str
+    model_name: str
+    api_key: Optional[str] = None
+    temperature: float = 0
+    max_tokens: int = 8192
+
+    def validate(self) -> None:
+        """验证配置有效性"""
+        if not self.base_url:
+            raise ValueError(f"{self.provider}配置缺少base_url")
+        if not self.model_name:
+            raise ValueError(f"{self.provider}配置缺少model_name")
+        if not self.api_key:
+            logger.warning(f"{self.provider} API密钥未配置，将尝试使用环境变量")
+
+def load_model_config(provider: str = "302") -> ModelConfig:
+    """加载指定供应商的模型配置"""
+    configs = {
+        "302": ModelConfig(
+            provider="302",
+            base_url=os.getenv("API_302_BASE_URL", "https://api.302.ai/v1/chat/completions"),
+            model_name=os.getenv("API_302_MODEL", "gemini-2.0-pro-exp-02-05"),
+            api_key=os.getenv("API_302_KEY")
+        ),
+        "deepseek": ModelConfig(
+            provider="deepseek",
+            base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+            model_name=os.getenv("DEEPSEEK_MODEL", "deepseek-reasoner"),
+            api_key=os.getenv("DEEP_SEEK_API_KEY")
+        ),
+        "aliyun": ModelConfig(
+            provider="aliyun",
+            base_url=os.getenv("ALIYUN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+            model_name=os.getenv("ALIYUN_MODEL", "qwq-32b"),
+            api_key=os.getenv("DASHSCOPE_API_KEY")
+        )
+    }
+    
+    config = configs.get(provider.lower())
+    if not config:
+        raise ValueError(f"不支持的供应商: {provider}")
+    
+    config.validate()
+    return config
+
+# 初始化客户端
+current_config = load_model_config()
+client = OpenAI(api_key=current_config.api_key, base_url=current_config.base_url)
 
 def call_ai(
     ai_prompt: str,
     requirement_content: str,
-    extractor: Callable[[str], Any],
-    validator: Callable[[Any], Tuple[bool, str]],
+    extractor: Callable[[str], T],
+    validator: Callable[[T], Tuple[bool, str]],
     max_iterations: int = 5,
-) -> str:
+) -> T:
     """
-    Calls an AI model and refines the response based on extraction and validation.
-
+    AI大模型调用与验证流程
+    
     Args:
-        ai_prompt: The system prompt for the AI.
-        requirement_content: The user's requirement.
-        extractor: A function that extracts relevant data (e.g., table, JSON) from the AI's response.
-        validator: A function that validates the extracted data and returns (is_valid, error_message).
-        max_iterations: Maximum number of conversation turns.
-
+        ai_prompt: 系统提示词
+        requirement_content: 需求内容
+        extractor: 内容提取函数
+        validator: 数据验证函数
+        max_iterations: 最大重试次数
+        
     Returns:
-        The final answer content from the AI.
+        验证通过后的结构化数据
+        
+    Raises:
+        RuntimeError: 超过最大重试次数或通信失败
     """
+    messages: List[Dict[str, str]] = [
+        {"role": "system", "content": ai_prompt},
+        {"role": "user", "content": requirement_content}
+    ]
 
-    answer_content = ""
-    messages: List[Dict[str, str]] = []
-    conversation_idx = 0
+    for attempt in range(1, max_iterations + 1):
+        logger.info(f"开始第 {attempt}/{max_iterations} 次生成尝试")
+        
+        try:
+            completion = client.chat.completions.create(
+                model=current_config.model_name,
+                messages=messages,
+                stream=True,
+                temperature=current_config.temperature,
+                max_tokens=current_config.max_tokens
+            )
 
-    sys_msg = {"role": "system", "content": ai_prompt}
-    messages.append(sys_msg)
-    user_msg = {"role": "user", "content": requirement_content}
-    messages.append(user_msg)
+            # 处理流式响应
+            reasoning, answer = process_stream_response(completion)
+            messages.append({"role": "assistant", "content": answer})
+            
+            # 提取并验证数据
+            extracted_data = extractor(answer)
+            is_valid, error_msg = validator(extracted_data)
+            
+            if is_valid:
+                logger.info("数据校验通过")
+                return extracted_data
+                
+            logger.warning(f"校验未通过: {error_msg}")
+            messages.append({"role": "user", "content": f"校验错误: {error_msg}"})
 
-    while True:
-        print("=" * 20 + f"第{conversation_idx+1}轮对话" + "=" * 20)
-        conversation_idx += 1
+        except Exception as e:
+            logger.error(f"API请求失败: {str(e)}")
+            if attempt == max_iterations:
+                raise RuntimeError(f"超过最大重试次数({max_iterations})") from e
 
-        completion = client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            stream=True,
-            # stream_options={"include_usage": True}  # Uncomment if needed
-        )
+    raise RuntimeError(f"无法生成有效数据，已达最大重试次数: {max_iterations}")
 
-        current_reasoning_content, current_answer_content = get_open_ai_response(
-            completion
-        )
-        answer_content += current_answer_content
-        messages.append({"role": "assistant", "content": current_answer_content})
-        print("\n")
-
-        extracted_data = extractor(current_answer_content)
-        is_valid, error = validator(extracted_data)
-
-        if is_valid:
-            print("校验通过")
-            break
-        else:
-            print(f"校验失败：{error}")
-            user_msg = {"role": "user", "content": f"{error}"}
-            messages.append(user_msg)
-
-        if conversation_idx > max_iterations:
-            #raise ValueError(f'AI生成内容失败，超过最大尝试次数')
-            break
-
-    return extracted_data
-
-
-
-def get_open_ai_response(completion):
-    reasoning_content = ''  # 推理过程
-    answer_content = ''  # 正文回复
+def process_stream_response(completion) -> Tuple[str, str]:
+    """处理流式响应并返回推理过程和回答内容"""
+    reasoning_content = []
+    answer_content = []
+    
     for chunk in completion:
-        # 如果chunk.choices为空，则打印usage
         if not chunk.choices:
-            print("\nUsage:")
-            print(chunk.usage)
-        else:
-            delta = chunk.choices[0].delta
-            # 打印思考过程
-            if hasattr(delta, 'reasoning_content') and delta.reasoning_content != None:
-                print(delta.reasoning_content, end='', flush=True)
-                reasoning_content += delta.reasoning_content
-            else:
-                # 打印回复过程
-                print(delta.content, end='', flush=True)
-                if delta.content is not None:  # 过滤 None
-                    answer_content += delta.content
-    return reasoning_content, answer_content
+            continue
+            
+        delta = chunk.choices[0].delta
+        
+        if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+            reasoning_content.append(delta.reasoning_content)
+            logger.debug(f"推理内容: {delta.reasoning_content}")
+            
+        if delta.content:
+            answer_content.append(delta.content)
+            logger.debug(f"回答内容: {delta.content}")
+    
+    return ''.join(reasoning_content), ''.join(answer_content)
 
 
 

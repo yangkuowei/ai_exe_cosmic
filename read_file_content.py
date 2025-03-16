@@ -21,63 +21,59 @@ def read_file_content(file_path):
         print(f"文件不存在: {file_path}")
 
 
-def save_content_to_file(original_filename: str, output_base_dir: str, content: str, content_type: str = "text"):
+def save_content_to_file(file_name: str, output_dir: str, content: str, content_type: str = "text"):
     """
     保存内容到文件，支持不同类型的文件。
 
     Args:
-        original_filename: 原始文件名（例如 "11.txt"）。
-        output_base_dir: 输出目录的基础路径（例如 "out_put_files"）。
-        content: 要保存的字符串内容。
-        content_type: 内容类型 ("text", "json", "markdown", "other"). 决定文件扩展名和处理方式。
+        file_name: 输出文件名（不含扩展名）
+        output_dir: 输出目录路径
+        content: 要保存的字符串内容
+        content_type: 内容类型 ("text", "json", "markdown", "other")
     """
 
     try:
-        # 1. 提取原始文件名（不含扩展名）
-        base_name = os.path.splitext(original_filename)[0]
+        # 1. 提取基础文件名
+        base_name = os.path.splitext(file_name)[0]
 
-        # 2. 构建输出目录路径
-        output_dir = os.path.join(output_base_dir, base_name)
-
-        # 3. 创建输出目录（如果不存在）
+        # 2. 创建输出目录（如果不存在）
         os.makedirs(output_dir, exist_ok=True)
 
         # 4. 根据 content_type 确定文件扩展名和保存逻辑
         if content_type == "json":
-            output_filename = os.path.join(output_dir, base_name + "-json.json")
+            output_filename = os.path.join(output_dir, f"{base_name}.json")
             with open(output_filename, "w", encoding="utf-8") as f:
                 f.write(content)
         elif content_type == "text":
-            output_filename = os.path.join(output_dir, base_name + "-txt.txt")
+            output_filename = os.path.join(output_dir, f"{base_name}.txt")
             with open(output_filename, "w", encoding="utf-8") as f:
                 f.write(content)
 
         elif content_type == "markdown":
-            output_filename = os.path.join(output_dir, base_name + "-md.md")
+            output_filename = os.path.join(output_dir, f"{base_name}.md")
             with open(output_filename, "w", encoding="utf-8") as f:
                 f.write(content)
         elif content_type == 'xlsx':
-            output_filename = os.path.join(output_dir, base_name + "-cosmic.xlsx")
+            output_filename = os.path.join(output_dir, f"{base_name}.xlsx")
             df = markdown_table_to_df(content)
             if df is not None:
                 df.to_excel(output_filename, index=False)  # 保存为 Excel
         elif content_type == 'docx':
             ##先读取excel 文件
-            excel_file = os.path.join(output_dir, f"{base_name}-cosmic.xlsx")
-            output_filename = os.path.join(output_dir, f"{base_name}-cosmic.docx")
+            excel_file = os.path.join(output_dir, f"{base_name}.xlsx")
+            output_filename = os.path.join(output_dir, f"{base_name}.docx")
             create_function_design_doc(excel_file, output_filename)
         else:  # 默认情况，可以根据需要添加更多类型
             # 获取原始文件的扩展名
-            original_extension = os.path.splitext(original_filename)[1]
-
-            output_filename = os.path.join(output_dir, base_name + original_extension)
+            original_extension = os.path.splitext(file_name)[1]
+            output_filename = os.path.join(output_dir, f"{base_name}{original_extension}")
             with open(output_filename, "w", encoding="utf-8") as f:
                 f.write(content)
 
         print(f"已创建文件: {output_filename}")
 
     except Exception as e:
-        print(f"处理文件 {original_filename} 时发生错误: {e}")
+        print(f"处理文件 {file_name} 时发生错误: {e}")
 
 
 def extract_number(text):
@@ -213,4 +209,3 @@ def create_function_design_doc(excel_file, docx_file):
             current_process_num += 1
 
     document.save(docx_file)
-
