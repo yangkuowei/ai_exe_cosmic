@@ -1,0 +1,6 @@
+1. 客户需求：$customer_requirements [用户提供的需求标题，必填]
+2. 需求背景：$background [需求的背景描述，必填]
+3. 详细方案：$detailed_plan  [需求的详细设计方案，必填]
+4. 功能用户：$functional_users  [发起者: [系统] 接收者：[系统]，必填]
+5. 功能用户需求: $functional_user_requirements  [用户输入的功能用户需求/没有可以不写]
+6. 表格总行数要求：$rows [例如：40行左右，必填]
