@@ -1,3 +1,4 @@
+from datetime import datetime
 from functools import partial
 import re
 import json
@@ -61,15 +62,25 @@ def load_prompt_template(template_path: Path) -> str:
         logger.error(f"Failed to load prompt template: {template_path}")
         raise RuntimeError(f"Prompt template loading failed: {e}") from e
 
+import argparse
+
 def main() -> None:
-    """主业务流程"""
+    """主业务流程（支持分阶段执行）
+    
+    命令行参数:
+        --stage1   仅执行阶段1（生成触发事件JSON）
+        --stage2   仅执行阶段2（生成COSMIC表格）
+        默认同时执行两个阶段
+    """
     try:
+        # 解析命令行参数
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--stage1', action='store_true', help='仅执行阶段1（生成触发事件JSON）')
+        parser.add_argument('--stage2', action='store_true', help='仅执行阶段2（生成COSMIC表格）')
+        args = parser.parse_args()
+
         config = ProjectConfig()
         config.validate_paths()
-        
-        # 加载提示模板
-        trigger_prompt = load_prompt_template(config.trigger_events_template)
-        cosmic_prompt = load_prompt_template(config.cosmic_table_template)
         
         # 读取需求文件
         request_file = config.requirements_dir / '202411291723184关于全光WiFi（FTTR）业务流程-转普通宽带智能网关出库的补充需求.txt'
@@ -82,23 +93,38 @@ def main() -> None:
             
         logger.info(f"成功读取需求文件: {request_file.name}")
 
-        # 生成触发事件JSON
-        json_str = generate_trigger_events(
-            prompt=trigger_prompt,
-            requirement=requirement_content,
-            total_rows=total_rows,
-            output_dir=config.output_dir,
-            request_file=request_file
-        )
+        json_str = ""
+        output_path = config.output_dir / request_file.stem
+        
+        # 阶段执行逻辑
+        run_stage1 = args.stage1 or (not args.stage1 and not args.stage2)
+        run_stage2 = args.stage2 or (not args.stage1 and not args.stage2)
 
-        # 生成COSMIC表格
-        generate_cosmic_table(
-            prompt=cosmic_prompt,
-            base_content=requirement_content,
-            json_data=json_str,
-            output_dir=config.output_dir,
-            request_file=request_file
-        )
+        if run_stage1:
+            # 阶段1：生成触发事件JSON
+            json_str = generate_trigger_events(
+                prompt=load_prompt_template(config.trigger_events_template),
+                requirement=requirement_content,
+                total_rows=total_rows,
+                output_dir=config.output_dir,
+                request_file=request_file
+            )
+        elif run_stage2:
+            # 尝试读取已存在的JSON文件
+            json_file = output_path / f"{request_file.name}.json"
+            if not json_file.exists():
+                raise FileNotFoundError(f"未找到阶段1输出文件，请先执行阶段1: {json_file}")
+            json_str = read_file_content(str(json_file))
+
+        if run_stage2:
+            # 阶段2：生成COSMIC表格
+            generate_cosmic_table(
+                prompt=load_prompt_template(config.cosmic_table_template),
+                base_content=requirement_content,
+                json_data=json_str,
+                output_dir=config.output_dir,
+                request_file=request_file
+            )
 
     except Exception as e:
         logger.error(f"程序运行失败: {str(e)}")
@@ -148,7 +174,23 @@ def generate_cosmic_table(
     request_file: Path,
     batch_size: int = 3
 ) -> None:
-    """生成COSMIC表格（支持分批处理）"""
+    """生成COSMIC表格（支持分批处理及独立执行）
+    
+    参数:
+        prompt: AI提示模板
+        base_content: 原始需求内容
+        json_data: 触发事件JSON数据（字符串格式）
+        output_dir: 输出目录
+        request_file: 原始需求文件路径
+        batch_size: 每批处理事件数（默认3）
+        
+    执行逻辑:
+        1. 检查输入JSON数据有效性
+        2. 创建临时目录
+        3. 分批处理并生成中间文件
+        4. 合并结果并生成最终文件
+        5. 保存校验报告
+    """
     logger.info("开始生成COSMIC表格...")
     
     try:
@@ -239,6 +281,21 @@ def generate_cosmic_table(
             output_dir=str(output_path),
             content=full_table,
             content_type="markdown"
+        )
+        
+        # 校验并保存校验结果
+        is_valid, messages = validate_cosmic_table(full_table)
+        result_content = f"校验时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        result_content += f"校验结果：{'通过' if is_valid else '失败'}\n"
+        result_content += "详细信息：\n" + "\n".join(messages)
+        
+        # 保存校验结果文件
+        result_filename = f"{request_file.stem}_resultcheck.txt"
+        save_content_to_file(
+            file_name=result_filename,
+            output_dir=str(output_path),
+            content=result_content,
+            content_type="text"
         )
         
         # 生成Excel和Word
