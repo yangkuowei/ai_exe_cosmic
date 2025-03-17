@@ -1,7 +1,9 @@
 from functools import partial
-import os
+import re
+import json
+import shutil
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Any, List
 import logging
 
 from ai_exe_cosmic.openAi_cline import call_ai
@@ -119,7 +121,8 @@ def generate_trigger_events(
             ai_prompt=prompt,
             requirement_content=requirement,
             extractor=extract_json_from_text,
-            validator=validator
+            validator=validator,
+            max_iterations = 3
         )
         
         output_path = output_dir / request_file.stem
@@ -142,54 +145,136 @@ def generate_cosmic_table(
     base_content: str,
     json_data: str,
     output_dir: Path,
-    request_file: Path
+    request_file: Path,
+    batch_size: int = 3
 ) -> None:
-    """生成COSMIC表格"""
+    """生成COSMIC表格（支持分批处理）"""
     logger.info("开始生成COSMIC表格...")
     
     try:
-        combined_content = f"{base_content}\n触发事件与功能过程列表：\n{json_data}"
+        # 解析原始JSON数据
+        cosmic_data = json.loads(json_data)
+        # 创建临时目录
+        temp_dir = output_dir / "temp"
+        temp_dir.mkdir(exist_ok=True)
         
-        markdown_table = call_ai(
-            ai_prompt=prompt,
-            requirement_content=combined_content,
-            extractor=extract_table_from_text,
-            validator=validate_cosmic_table
-        )
+        # 分批处理触发事件（按需求逐个处理）
+        batch_num = 1
+        temp_files = []
         
+        # 遍历每个需求
+        for req in cosmic_data["functional_user_requirements"]:
+            req_events = req["trigger_events"]
+            requirement_name = req["requirement"]
+            
+            # 按需求内的触发事件分批
+            for i in range(0, len(req_events), batch_size):
+                batch_events = req_events[i:i+batch_size]
+                
+                # 构建单个需求的批次JSON
+                batch_json = {
+                    "functional_user_requirements": [{
+                        "requirement": requirement_name,
+                        "trigger_events": batch_events
+                    }]
+                }
+            
+            # 计算本批次功能过程数量
+            total_processes = sum(
+                len(event["functional_processes"])
+                for req in batch_json["functional_user_requirements"]
+                for event in req["trigger_events"]
+            )
+            
+            # 生成动态行数范围
+            min_rows = total_processes * 2
+            max_rows = total_processes * 5
+            row_range = f"{min_rows}~{max_rows}"
+            
+            # 更新基础内容中的行数要求
+            content_lines = base_content.splitlines()
+            for i in reversed(range(len(content_lines))):
+                if "表格总行数要求：" in content_lines[i]:
+                    # 使用正则表达式替换数字部分
+                    content_lines[i] = re.sub(
+                        r"(\d+)(行左右)", 
+                        f"{row_range}行（根据功能过程数量动态计算）", 
+                        content_lines[i]
+                    )
+                    break
+                    
+            updated_content = '\n'.join(content_lines)
+            
+            # 生成分批内容
+            combined_content = f"{updated_content}\n触发事件与功能过程列表：\n{json.dumps(batch_json, ensure_ascii=False)}"
+            
+            # 调用AI生成表格
+            markdown_table = call_ai(
+                ai_prompt=prompt,
+                requirement_content=combined_content,
+                extractor=extract_table_from_text,
+                validator=validate_cosmic_table
+            )
+            
+            # 保存临时文件
+            temp_filename = f"{request_file.stem}_batch{batch_num}.md"
+            temp_path = temp_dir / temp_filename
+            save_content_to_file(
+                file_name=temp_filename,
+                output_dir=str(temp_dir),
+                content=markdown_table,
+                content_type="markdown"
+            )
+            
+            temp_files.append(temp_path)
+            batch_num += 1
+        
+        # 合并临时文件
+        full_table = merge_temp_files(temp_files)
+        
+        # 保存最终文件
         output_path = output_dir / request_file.stem
-        
-        # 保存并处理Markdown表格
         save_content_to_file(
             file_name=request_file.name,
             output_dir=str(output_path),
-            content=markdown_table,
+            content=full_table,
             content_type="markdown"
         )
         
-        processed_table = process_markdown_table(markdown_table)
+        # 生成Excel和Word
+        processed_table = process_markdown_table(full_table)
+        for file_type in ["xlsx", "docx"]:
+            save_content_to_file(
+                file_name=request_file.name,
+                output_dir=str(output_path),
+                content=processed_table,
+                content_type=file_type
+            )
         
-        # 生成Excel文件
-        save_content_to_file(
-            file_name=request_file.name,
-            output_dir=str(output_path),
-            content=processed_table,
-            content_type="xlsx"
-        )
-        
-        # 生成Word文档
-        save_content_to_file(
-            file_name=request_file.name,
-            output_dir=str(output_path),
-            content=processed_table,
-            content_type="docx"
-        )
-        
+        # 清理临时文件
+        shutil.rmtree(temp_dir)
         logger.info(f"COSMIC表格已保存至: {output_path}")
 
     except Exception as e:
         logger.error(f"COSMIC表格生成失败: {str(e)}")
         raise
+
+def merge_temp_files(temp_files: List[Path]) -> str:
+    """合并临时Markdown表格文件"""
+    full_content = []
+    
+    for i, file_path in enumerate(sorted(temp_files)):
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read().splitlines()
+            
+            if i == 0:
+                # 保留第一个文件的完整头
+                full_content.extend(content)
+            else:
+                # 跳过后续文件的头两行（标题和分隔符）
+                full_content.extend(content[2:])
+    
+    return "\n".join(full_content)
 
 if __name__ == "__main__":
     main()

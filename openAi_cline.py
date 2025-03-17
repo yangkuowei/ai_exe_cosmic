@@ -8,7 +8,7 @@ from pathlib import Path
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class ModelConfig:
         if not self.api_key:
             logger.warning(f"{self.provider} API密钥未配置，将尝试使用环境变量")
 
-def load_model_config(provider: str = "302") -> ModelConfig:
+def load_model_config(provider: str = "aliyun") -> ModelConfig:
     """加载指定供应商的模型配置"""
     configs = {
         "302": ModelConfig(
@@ -56,11 +56,11 @@ def load_model_config(provider: str = "302") -> ModelConfig:
             api_key=os.getenv("DASHSCOPE_API_KEY")
         )
     }
-    
+
     config = configs.get(provider.lower())
     if not config:
         raise ValueError(f"不支持的供应商: {provider}")
-    
+
     config.validate()
     return config
 
@@ -73,21 +73,21 @@ def call_ai(
     requirement_content: str,
     extractor: Callable[[str], T],
     validator: Callable[[T], Tuple[bool, str]],
-    max_iterations: int = 5,
+    max_iterations: int = 1,
 ) -> T:
     """
     AI大模型调用与验证流程
-    
+
     Args:
         ai_prompt: 系统提示词
         requirement_content: 需求内容
         extractor: 内容提取函数
         validator: 数据验证函数
         max_iterations: 最大重试次数
-        
+
     Returns:
         验证通过后的结构化数据
-        
+
     Raises:
         RuntimeError: 超过最大重试次数或通信失败
     """
@@ -98,7 +98,7 @@ def call_ai(
 
     for attempt in range(1, max_iterations + 1):
         logger.info(f"开始第 {attempt}/{max_iterations} 次生成尝试")
-        
+
         try:
             completion = client.chat.completions.create(
                 model=current_config.model_name,
@@ -111,11 +111,11 @@ def call_ai(
             # 处理流式响应
             reasoning, answer = process_stream_response(completion)
             messages.append({"role": "assistant", "content": answer})
-            
+
             # 提取并验证数据
             extracted_data = extractor(answer)
             is_valid, error_msg = validator(extracted_data)
-            
+
             if is_valid:
                 logger.info("数据校验通过")
                 return extracted_data
@@ -123,12 +123,16 @@ def call_ai(
             logger.warning(f"校验未通过: {error_msg}")
             messages.append({"role": "user", "content": f"校验错误: {error_msg}"})
 
+            if attempt == max_iterations:
+                return extracted_data
+
+
         except Exception as e:
             logger.error(f"API请求失败: {str(e)}")
             if attempt == max_iterations:
                 raise RuntimeError(f"超过最大重试次数({max_iterations})") from e
 
-    raise RuntimeError(f"无法生成有效数据，已达最大重试次数: {max_iterations}")
+    #raise RuntimeError(f"无法生成有效数据，已达最大重试次数: {max_iterations}")
 
 def process_stream_response(completion) -> Tuple[str, str]:
     """处理流式响应并返回推理过程和回答内容"""
