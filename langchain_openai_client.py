@@ -5,8 +5,6 @@ from langchain.schema import SystemMessage
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_community.chat_message_histories import ChatMessageHistory
 
-from ai_exe_cosmic.validate_cosmic_table import validate_cosmic_table, extract_table_from_text  # 保留原函数的导入
-
 # 这个不能输出思考过程，暂时不用
 def get_config(key, default=None):
     return os.getenv(key, default)
@@ -100,7 +98,7 @@ def call_ai(
     requirement_content: str,
     extractor: callable,
     validator: callable,
-    max_iterations: int = 3
+    max_iterations: int = 2
 ) -> str:
     generator = LangChainCosmicTableGenerator()
     return generator.generate_table(

@@ -78,7 +78,7 @@ def save_content_to_file(file_name: str, output_dir: str, content: str, content_
         print(f"处理文件 {file_name} 时发生错误: {e}")
 
 
-def extract_number(text):
+def extract_content_from_requst(text, extract_type: str = "total_rows"):
     """
       Args:
         text: 包含数字的文本字符串。
@@ -86,9 +86,12 @@ def extract_number(text):
       Returns:
         提取到的数字 (整数)，如果没有找到，则返回 None。
       """
-    match = re.search(r"表格总行数要求：(\d+)", text)  # 使用正则表达式精确匹配
-    if match:
-        return int(match.group(1))  # 将匹配到的字符串转为整数
+    if extract_type == 'total_rows' :
+        match = re.search(r"表格总行数要求：(\d+)", text)  #
+        return int(match.group(1))
+    if extract_type == 'request_name':
+        match = re.search(r"客户需求：(.*)", text)  # 需求名称
+        return match.group(1)
     else:
         return None
 

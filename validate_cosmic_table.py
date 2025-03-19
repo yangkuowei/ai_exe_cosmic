@@ -6,7 +6,7 @@ from typing import List, Dict, Tuple, Set
 
 
 # 校验、文本内容提取相关
-def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
+def validate_cosmic_table(markdown_table_str: str,request_name: str) -> Tuple[bool, str]:
     """
     校验COSMIC功能点度量表格。
 
@@ -43,12 +43,17 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
     process_subprocesses_map: Dict[str, List[str]] = {}
 
     for row_num, row in enumerate(table, 1):  # row_num从1开始，方便错误信息提示
+        request_name_str = row["客户需求"]
         trigger_event = row["触发事件"]
         process = row["功能过程"]
         sub_process = row["子过程描述"]
         data_move_type = row["数据移动类型"]
         data_group = row["数据组"]
         data_attributes_str = row["数据属性"]
+
+
+        if request_name_str != request_name:
+            errors.append(f" 客户需求 必须为[{request_name}]'。")
 
         # 1. 触发事件与功能过程的对应关系
         if trigger_event not in trigger_process_map:
@@ -270,10 +275,21 @@ def validate_trigger_event_json(json_str, total_rows) -> Tuple[bool, str]:
                     f"JSON结构错误：'functional_user_requirements'[{req_index}] 缺少 'requirement' 或 'trigger_events' 键。")
                 continue  # 如果缺少关键键，跳过当前需求，继续检查下一个
 
+            # 新增校验 1: requirement 长度校验
+            if len(req["requirement"]) > 35:
+                errors.append(
+                    f"功能用户需求[{req['requirement']}]名称长度不能超过35，请概况总结")
+
             if not isinstance(req["trigger_events"], list):
                 errors.append(
                     f"JSON结构错误: 'functional_user_requirements'[{req_index}]['trigger_events'] 必须是列表。")
                 continue
+
+            # 新增校验 2: 同一个 functional_user_requirements 下的 trigger_events 数量不能超过 5 个
+            if len(req["trigger_events"]) > 6:
+                errors.append(
+                    f"数量校验错误: 'functional_user_requirements'[{req_index}] 的触发事件 'trigger_events' 数量不能超过 6 个。可以拆分更多的功能用户需求来解决"
+                )
 
             for event_index, event in enumerate(req["trigger_events"]):
                 if not isinstance(event, dict) or "event" not in event or "functional_processes" not in event:

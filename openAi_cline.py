@@ -8,7 +8,7 @@ from pathlib import Path
 
 # 配置日志
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class ModelConfig:
     model_name: str
     api_key: Optional[str] = None
     temperature: float = 0.9
-    #max_tokens: int = 8192
+    max_tokens: int = 8192
 
     def validate(self) -> None:
         """验证配置有效性"""
@@ -34,7 +34,7 @@ class ModelConfig:
         if not self.api_key:
             logger.warning(f"{self.provider} API密钥未配置，将尝试使用环境变量")
 
-def load_model_config(provider: str = "nvidia") -> ModelConfig:
+def load_model_config(provider: str = "aliyun") -> ModelConfig:
     """加载指定供应商的模型配置"""
     configs = {
         "302": ModelConfig(
@@ -111,7 +111,7 @@ def call_ai(
                 messages=messages,
                 stream=True,
                 temperature=current_config.temperature,
-                max_tokens=current_config.max_tokens
+                #max_tokens=current_config.max_tokens
             )
 
             # 处理流式响应
