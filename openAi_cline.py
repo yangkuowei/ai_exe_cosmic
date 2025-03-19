@@ -22,8 +22,8 @@ class ModelConfig:
     base_url: str
     model_name: str
     api_key: Optional[str] = None
-    temperature: float = 0
-    max_tokens: int = 8192
+    temperature: float = 0.9
+    #max_tokens: int = 8192
 
     def validate(self) -> None:
         """验证配置有效性"""
@@ -34,7 +34,7 @@ class ModelConfig:
         if not self.api_key:
             logger.warning(f"{self.provider} API密钥未配置，将尝试使用环境变量")
 
-def load_model_config(provider: str = "aliyun") -> ModelConfig:
+def load_model_config(provider: str = "nvidia") -> ModelConfig:
     """加载指定供应商的模型配置"""
     configs = {
         "302": ModelConfig(
@@ -54,6 +54,12 @@ def load_model_config(provider: str = "aliyun") -> ModelConfig:
             base_url=os.getenv("ALIYUN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
             model_name=os.getenv("ALIYUN_MODEL", "qwq-32b"),
             api_key=os.getenv("DASHSCOPE_API_KEY")
+        ),
+        "nvidia": ModelConfig(
+            provider="nvidia",
+            base_url=os.getenv("ALIYUN_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+            model_name=os.getenv("ALIYUN_MODEL", "deepseek-ai/deepseek-r1"),
+            api_key=os.getenv("NVIDIA_API_KEY")
         )
     }
 
@@ -147,11 +153,12 @@ def process_stream_response(completion) -> Tuple[str, str]:
         
         if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
             reasoning_content.append(delta.reasoning_content)
-            logger.debug(f"推理内容: {delta.reasoning_content}")
+            #logger.debug(f"推理内容: {delta.reasoning_content}")
+            print(delta.reasoning_content, end='', flush=True)  # 实时流式输出到控制台
             
         if delta.content:
             answer_content.append(delta.content)
-            logger.debug(f"回答内容: {delta.content}")
+            print(delta.content, end='', flush=True)  # 实时流式输出到控制台
     
     return ''.join(reasoning_content), ''.join(answer_content)
 

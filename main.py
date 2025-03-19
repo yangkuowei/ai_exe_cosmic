@@ -7,12 +7,13 @@ from pathlib import Path
 from typing import Optional, Any, List
 import logging
 
-from ai_exe_cosmic.openAi_cline import call_ai
+from ai_exe_cosmic.langchain_openai_client import call_ai
+
 from ai_exe_cosmic.read_file_content import (
     process_markdown_table,
     read_file_content,
     save_content_to_file,
-    extract_number
+    extract_number, merge_cells_by_column
 )
 from ai_exe_cosmic.validate_cosmic_table import (
     validate_cosmic_table,
@@ -100,6 +101,7 @@ def main() -> None:
         run_stage1 = args.stage1 or (not args.stage1 and not args.stage2)
         run_stage2 = args.stage2 or (not args.stage1 and not args.stage2)
 
+        #run_stage1 = False
         if run_stage1:
             # 阶段1：生成触发事件JSON
             json_str = generate_trigger_events(
@@ -111,7 +113,8 @@ def main() -> None:
             )
         elif run_stage2:
             # 尝试读取已存在的JSON文件
-            json_file = output_path / f"{request_file.name}.json"
+            base_name = request_file.name.split(".")[0]
+            json_file = output_path / f"{base_name}.json"
             if not json_file.exists():
                 raise FileNotFoundError(f"未找到阶段1输出文件，请先执行阶段1: {json_file}")
             json_str = read_file_content(str(json_file))
@@ -221,56 +224,56 @@ def generate_cosmic_table(
                     }]
                 }
             
-            # 计算本批次功能过程数量
-            total_processes = sum(
-                len(event["functional_processes"])
-                for req in batch_json["functional_user_requirements"]
-                for event in req["trigger_events"]
-            )
-            
-            # 生成动态行数范围
-            min_rows = total_processes * 2
-            max_rows = total_processes * 5
-            row_range = f"{min_rows}~{max_rows}"
-            
-            # 更新基础内容中的行数要求
-            content_lines = base_content.splitlines()
-            for i in reversed(range(len(content_lines))):
-                if "表格总行数要求：" in content_lines[i]:
-                    # 使用正则表达式替换数字部分
-                    content_lines[i] = re.sub(
-                        r"(\d+)(行左右)", 
-                        f"{row_range}行（根据功能过程数量动态计算）", 
-                        content_lines[i]
-                    )
-                    break
-                    
-            updated_content = '\n'.join(content_lines)
-            
-            # 生成分批内容
-            combined_content = f"{updated_content}\n触发事件与功能过程列表：\n{json.dumps(batch_json, ensure_ascii=False)}"
-            
-            # 调用AI生成表格
-            markdown_table = call_ai(
-                ai_prompt=prompt,
-                requirement_content=combined_content,
-                extractor=extract_table_from_text,
-                validator=validate_cosmic_table
-            )
-            
-            # 保存临时文件
-            temp_filename = f"{request_file.stem}_batch{batch_num}.md"
-            temp_path = temp_dir / temp_filename
-            save_content_to_file(
-                file_name=temp_filename,
-                output_dir=str(temp_dir),
-                content=markdown_table,
-                content_type="markdown"
-            )
-            
-            temp_files.append(temp_path)
-            batch_num += 1
-        
+                # 计算本批次功能过程数量
+                total_processes = sum(
+                    len(event["functional_processes"])
+                    for req in batch_json["functional_user_requirements"]
+                    for event in req["trigger_events"]
+                )
+
+                # 生成动态行数范围
+                min_rows = total_processes * 2
+                max_rows = total_processes * 5
+                row_range = f"{min_rows}~{max_rows}"
+
+                # 更新基础内容中的行数要求
+                content_lines = base_content.splitlines()
+                for i in reversed(range(len(content_lines))):
+                    if "表格总行数要求：" in content_lines[i]:
+                        # 使用正则表达式替换数字部分
+                        content_lines[i] = re.sub(
+                            r"(\d+)(行左右)",
+                            f"{row_range}行（根据功能过程数量动态计算）",
+                            content_lines[i]
+                        )
+                        break
+
+                updated_content = '\n'.join(content_lines)
+
+                # 生成分批内容
+                combined_content = f"{updated_content}\n触发事件与功能过程列表：\n{json.dumps(batch_json, ensure_ascii=False)}"
+
+                # 调用AI生成表格
+                markdown_table = call_ai(
+                    ai_prompt=prompt,
+                    requirement_content=combined_content,
+                    extractor=extract_table_from_text,
+                    validator=validate_cosmic_table
+                )
+
+                # 保存临时文件
+                temp_filename = f"{request_file.stem}_batch{batch_num}.md"
+                temp_path = temp_dir / temp_filename
+                save_content_to_file(
+                    file_name=temp_filename,
+                    output_dir=str(temp_dir),
+                    content=markdown_table,
+                    content_type="markdown"
+                )
+
+                temp_files.append(temp_path)
+                batch_num += 1
+
         # 合并临时文件
         full_table = merge_temp_files(temp_files)
         
@@ -304,10 +307,14 @@ def generate_cosmic_table(
             save_content_to_file(
                 file_name=request_file.name,
                 output_dir=str(output_path),
-                content=processed_table,
+                content=full_table,
                 content_type=file_type
             )
-        
+        # 合并表格单元格
+        base_name = request_file.name.split(".")[0]
+        excel_file = output_path / f"{base_name}.xlsx"
+        merge_cells_by_column(excel_file, "Sheet1")
+
         # 清理临时文件
         shutil.rmtree(temp_dir)
         logger.info(f"COSMIC表格已保存至: {output_path}")

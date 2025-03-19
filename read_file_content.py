@@ -7,6 +7,8 @@ from openpyxl import load_workbook
 from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from openpyxl.styles import Alignment
+
 # 文件操作
 
 def read_file_content(file_path):
@@ -209,3 +211,75 @@ def create_function_design_doc(excel_file, docx_file):
             current_process_num += 1
 
     document.save(docx_file)
+
+
+def merge_cells_by_column(filename, sheetname):
+    """
+    按列合并 Excel 单元格。
+
+    Args:
+        filename: Excel 文件名。
+        sheetname: 要处理的 Sheet 名称。
+    """
+    workbook = load_workbook(filename)
+    sheet = workbook[sheetname]
+
+    # 处理 A 到 E 列 (0-4)
+    for col_index in range(5):  # 列索引从0开始
+        start_row = None
+        start_value = None
+        end_row = None  # 新增：记录批次的结束行
+
+        # 循环每一行，从第二行开始（跳过标题行）
+        for row_index in range(2, sheet.max_row + 1):
+            cell = sheet.cell(row=row_index, column=col_index + 1)
+            cell_value = cell.value
+
+            if cell_value is not None and cell_value != "":  # 非空单元格
+                if start_row is None:  # 找到第一个非空单元格
+                    start_row = row_index
+                    start_value = cell_value
+                    end_row = row_index  # 初始时，结束行就是起始行
+                elif cell_value != start_value:  # 遇到不同内容的非空单元格
+                    # 合并单元格 (如果 end_row 有效)
+                    if end_row is not None:
+                        sheet.merge_cells(
+                            start_row=start_row,
+                            start_column=col_index + 1,
+                            end_row=end_row,  # 使用 end_row
+                            end_column=col_index + 1,
+                        )
+                        merged_cell = sheet.cell(row=start_row, column=col_index + 1)
+                        merged_cell.alignment = Alignment(
+                            horizontal="center", vertical="center", wrap_text=True
+                        )
+                        merged_cell.value = start_value
+
+                    # 重置起始位置和结束位置
+                    start_row = row_index
+                    start_value = cell_value
+                    end_row = row_index
+                else:  # 遇到相同内容的非空单元格
+                    end_row = row_index  # 更新结束行
+
+            elif start_row is not None:  # 遇到空单元格，且已经有起始位置
+                end_row = row_index      # 更新结束行
+
+        # 处理最后一批单元格（如果存在）
+        if start_row is not None and end_row is not None:
+            sheet.merge_cells(
+                start_row=start_row,
+                start_column=col_index + 1,
+                end_row=end_row,  # 使用 end_row
+                end_column=col_index + 1,
+            )
+            merged_cell = sheet.cell(row=start_row, column=col_index + 1)
+            merged_cell.alignment = Alignment(
+                horizontal="center", vertical="center", wrap_text=True
+            )
+            merged_cell.value = start_value
+
+    workbook.save(filename)  # 保存修改
+
+
+

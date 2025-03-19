@@ -126,7 +126,7 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
         for move in moves:
             if move == "R":
                 r_count += 1
-                if r_count >= 2:
+                if r_count > 2:
                     errors.append(f"功能过程 '{process}' 的数据移动类型中包含连续2个或更多个R。")
                     break  # 发现连续2个R，停止检查此功能过程
             else:
