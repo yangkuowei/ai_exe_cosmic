@@ -2,6 +2,8 @@ import os
 
 import re
 import pandas as pd
+import json
+
 
 from openpyxl import load_workbook
 from docx import Document
@@ -286,3 +288,70 @@ def merge_cells_by_column(filename, sheetname):
 
 
 
+def json_to_excel(json_file, excel_file):
+    """
+    将COSMIC度量JSON数据(方案二)转换为Excel表格。
+
+    Args:
+        json_file: JSON文件路径。
+        excel_file: 输出Excel文件路径。
+    """
+
+    with open(json_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    rows = []
+    for item in data:
+        req = item['req']
+        user = item['user']
+        for fur_item in item['furs']:
+            fur = fur_item['fur']
+            for event_item in fur_item['events']:
+                event = event_item['event']
+                for process_item in event_item['processes']:
+                    process = process_item['process']
+                    for step_item in process_item['steps']:
+                        sub_process = step_item['subProcess']
+                        data_group = step_item['dataGroup']
+                        data_attr = step_item['dataAttr']
+
+                        # 分离数据移动类型和子过程描述
+                        parts = sub_process.split(":", 1)  # 最多分割成两部分
+                        if len(parts) == 2:
+                            move_type = parts[0].strip()
+                            sub_process_desc = parts[1].strip()
+                        else:  # 如果没有冒号，则move_type为空
+                            move_type = ""
+                            sub_process_desc = parts[0].strip()
+
+
+
+                        row = {
+                            '客户需求': req,
+                            '功能用户': user,
+                            '功能用户需求': fur,
+                            '触发事件': event,
+                            '功能过程': process,
+                            '子过程描述': sub_process_desc,
+                            '数据移动类型': move_type,
+                            '数据组': data_group,
+                            '数据属性': data_attr,
+                            '复用度': '新增',
+                            'CFP': 1,
+                            'ΣCFP': 1
+                        }
+                        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    # 调整列的顺序，与提供的表格一致
+    df = df[['客户需求', '功能用户', '功能用户需求', '触发事件', '功能过程', '子过程描述', '数据移动类型', '数据组', '数据属性', '复用度', 'CFP', 'ΣCFP']]
+
+    # 生成Excel文件
+    df.to_excel(excel_file, index=False, engine='openpyxl')
+
+
+json_file = 'data.json'  # 替换为您的JSON文件名
+excel_file = 'output.xlsx'  # 替换为您希望的输出Excel文件名
+json_to_excel(json_file, excel_file)
+print(f"已将JSON数据转换为Excel表格，保存至 {excel_file}")
