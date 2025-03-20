@@ -245,8 +245,8 @@ def generate_cosmic_table(
                 )
 
                 # 生成动态行数范围
-                min_rows = total_processes * 2
-                max_rows = total_processes * 5
+                min_rows = total_processes * 3
+                max_rows = total_processes * 4
                 row_range = f"{min_rows}~{max_rows}"
 
                 # 更新基础内容中的行数要求
@@ -324,10 +324,7 @@ def generate_cosmic_table(
                 content=full_table,
                 content_type=file_type
             )
-        # 合并表格单元格
-        base_name = request_file.name.split(".")[0]
-        excel_file = output_path / f"{base_name}.xlsx"
-        merge_cells_by_column(excel_file, "Sheet1")
+
 
         # 清理临时文件
         shutil.rmtree(temp_dir)

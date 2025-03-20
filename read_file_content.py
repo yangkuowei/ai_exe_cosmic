@@ -60,6 +60,9 @@ def save_content_to_file(file_name: str, output_dir: str, content: str, content_
             df = markdown_table_to_df(content)
             if df is not None:
                 df.to_excel(output_filename, index=False)  # 保存为 Excel
+
+            # 合并表格单元格
+            merge_cells_by_column(output_filename, "Sheet1")
         elif content_type == 'docx':
             ##先读取excel 文件
             excel_file = os.path.join(output_dir, f"{base_name}.xlsx")
