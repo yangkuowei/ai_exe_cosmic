@@ -7,15 +7,14 @@ from pathlib import Path
 from typing import  List
 import logging
 
-from ai_exe_cosmic.openAi_cline import call_ai
+from langchain_openai_client import call_ai
 
-from ai_exe_cosmic.read_file_content import (
-    process_markdown_table,
+from read_file_content import (
     read_file_content,
     save_content_to_file,
     merge_cells_by_column, extract_content_from_requst
 )
-from ai_exe_cosmic.validate_cosmic_table import (
+from validate_cosmic_table import (
     validate_cosmic_table,
     extract_table_from_text,
     extract_json_from_text,

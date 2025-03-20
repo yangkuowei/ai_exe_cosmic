@@ -1,10 +1,8 @@
-from typing import Callable, Any, Tuple, Dict, List, Optional, TypeVar
+from typing import Callable, Tuple, Dict, List, Optional, TypeVar
 from openai import OpenAI
-from openai.types.chat import ChatCompletionChunk
 import os
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 
 # 配置日志
 logging.basicConfig(
@@ -34,7 +32,7 @@ class ModelConfig:
         if not self.api_key:
             logger.warning(f"{self.provider} API密钥未配置，将尝试使用环境变量")
 
-def load_model_config(provider: str = "aliyun") -> ModelConfig:
+def load_model_config(provider: str = "LMStudio") -> ModelConfig:
     """加载指定供应商的模型配置"""
     configs = {
         "302": ModelConfig(
@@ -59,6 +57,12 @@ def load_model_config(provider: str = "aliyun") -> ModelConfig:
             provider="nvidia",
             base_url=os.getenv("ALIYUN_BASE_URL", "https://integrate.api.nvidia.com/v1"),
             model_name=os.getenv("ALIYUN_MODEL", "deepseek-ai/deepseek-r1"),
+            api_key=os.getenv("NVIDIA_API_KEY")
+        ),
+        "lmstudio": ModelConfig(
+            provider="lmstudio",
+            base_url=os.getenv("BASE_URL", "http://127.0.0.1:1234/v1"),
+            model_name=os.getenv("model_name", "qwen2.5-32b-instruct"),
             api_key=os.getenv("NVIDIA_API_KEY")
         )
     }
