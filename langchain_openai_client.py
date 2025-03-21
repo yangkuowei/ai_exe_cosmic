@@ -5,8 +5,7 @@ from langchain.schema import SystemMessage
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_community.chat_message_histories import ChatMessageHistory
 
-# 这个不能输出思考过程，暂时不用
-from typing import Dict, Type
+
 from pydantic import BaseModel, ValidationError
 
 class ModelProvider(BaseModel):
@@ -19,29 +18,32 @@ class ModelProvider(BaseModel):
     def api_key(self) -> str:
         return os.getenv(self.api_key_env)
 
-# 支持的厂商配置
-PROVIDERS: Dict[str, Type[ModelProvider]] = {
-    "dashscope": ModelProvider(
-        model_name="qwq-32b",
-        api_key_env="DASHSCOPE_API_KEY",
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
-    ),
-    "deepseek": ModelProvider(
-        model_name="deepseek-reasoner",
-        api_key_env="DEEP_SEEK_API_KEY", 
-        base_url="https://api.deepseek.com/v1"
-    ),
-    "openai": ModelProvider(
-        model_name="gpt-4",
-        api_key_env="OPENAI_API_KEY",
-        base_url="https://api.openai.com/v1"
-    )
-}
+# 加载配置文件
+try:
+    import yaml
+    config_path = os.path.join(os.path.dirname(__file__), 'configs/model_providers.yaml')
+    
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+        
+    # 构建供应商配置
+    PROVIDERS = {
+        name: ModelProvider(**values)
+        for name, values in config['providers'].items()
+    }
+    
+    # 获取默认厂商（环境变量优先）
+    PROVIDER_NAME = os.getenv("LLM_PROVIDER", config['default_provider'])
+    
+except FileNotFoundError:
+    raise RuntimeError(f"Config file not found: {config_path}")
+except KeyError as e:
+    raise RuntimeError(f"Missing required config section: {e}")
+except Exception as e:
+    raise RuntimeError(f"Error loading config: {str(e)}")
 
-# 从环境变量获取厂商配置
-PROVIDER_NAME = os.getenv("LLM_PROVIDER", "deepseek")
 if PROVIDER_NAME not in PROVIDERS:
-    raise ValueError(f"Unsupported provider: {PROVIDER_NAME}")
+    raise ValueError(f"Unsupported provider: {PROVIDER_NAME}. Available: {', '.join(PROVIDERS.keys())}")
 
 CURRENT_PROVIDER = PROVIDERS[PROVIDER_NAME]
 
@@ -79,9 +81,7 @@ class LangChainCosmicTableGenerator:
         # 添加初始用户消息
         self.chat_history.add_user_message(requirement_content)
 
-
         conversation_idx = 0
-        final_answer = ""
 
         while True:
             print("=" * 20 + f"第{conversation_idx + 1}轮对话" + "=" * 20)
