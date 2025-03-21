@@ -4,15 +4,15 @@ import re
 import json
 import shutil
 from pathlib import Path
-from typing import  List
 import logging
+import argparse
 
 from langchain_openai_client import call_ai
 
 from read_file_content import (
     read_file_content,
     save_content_to_file,
-    merge_cells_by_column, extract_content_from_requst
+    extract_content_from_requst, merge_temp_files
 )
 from validate_cosmic_table import (
     validate_cosmic_table,
@@ -66,7 +66,6 @@ def load_prompt_template(template_path: Path) -> str:
         raise RuntimeError(f"Prompt template loading failed: {e}") from e
 
 
-import argparse
 
 
 def main() -> None:
@@ -304,7 +303,7 @@ def generate_cosmic_table(
         is_valid, messages = validate_cosmic_table(full_table, request_name)
         result_content = f"校验时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         result_content += f"校验结果：{'通过' if is_valid else '失败'}\n"
-        result_content += "详细信息：\n" + "\n".join(messages)
+        result_content += "详细信息：\n" + "".join(messages)
 
         # 保存校验结果文件
         result_filename = f"{request_file.stem}_resultcheck.txt"
@@ -335,22 +334,7 @@ def generate_cosmic_table(
         raise
 
 
-def merge_temp_files(temp_files: List[Path]) -> str:
-    """合并临时Markdown表格文件"""
-    full_content = []
 
-    for i, file_path in enumerate(sorted(temp_files)):
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read().splitlines()
-
-            if i == 0:
-                # 保留第一个文件的完整头
-                full_content.extend(content)
-            else:
-                # 跳过后续文件的头两行（标题和分隔符）
-                full_content.extend(content[2:])
-
-    return "\n".join(full_content)
 
 
 if __name__ == "__main__":

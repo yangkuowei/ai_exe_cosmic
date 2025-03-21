@@ -8,7 +8,8 @@ from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from openpyxl.styles import Alignment
-
+from pathlib import Path
+from typing import  List
 # 文件操作
 
 def read_file_content(file_path):
@@ -288,4 +289,19 @@ def merge_cells_by_column(filename, sheetname):
     workbook.save(filename)  # 保存修改
 
 
+def merge_temp_files(temp_files: List[Path]) -> str:
+    """合并临时Markdown表格文件"""
+    full_content = []
 
+    for i, file_path in enumerate(sorted(temp_files)):
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read().splitlines()
+
+            if i == 0:
+                # 保留第一个文件的完整头
+                full_content.extend(content)
+            else:
+                # 跳过后续文件的头两行（标题和分隔符）
+                full_content.extend(content[2:])
+
+    return "\n".join(full_content)
