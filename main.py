@@ -86,8 +86,21 @@ def main() -> None:
         config = ProjectConfig()
         config.validate_paths()
 
-        # 读取需求文件
-        request_file = config.requirements_dir / '202411291723184关于全光WiFi（FTTR）业务流程-转普通宽带智能网关出库的补充需求.txt'
+        # 读取需求文件（自动获取最新或通过参数指定）
+
+        # 自动获取requirements目录下最新的.txt文件
+        txt_files = list(config.requirements_dir.glob("*.txt"))
+        if not txt_files:
+            raise FileNotFoundError(f"需求目录中未找到.txt文件: {config.requirements_dir}")
+
+        # 按修改时间排序获取最新文件
+        txt_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        request_file = txt_files[0]
+
+        if len(txt_files) > 1:
+            logger.warning(f"检测到多个需求文件，已选择最新文件: {request_file.name}")
+
+        logger.info(f"正在使用需求文件: {request_file}")
         requirement_content = read_file_content(str(request_file))
 
         # 提取表格行数要求
