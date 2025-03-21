@@ -154,6 +154,9 @@ def main() -> None:
         raise
 
 
+from decorators import ai_processor
+
+@ai_processor(max_retries=3)
 def generate_trigger_events(
         prompt: str,
         requirement: str,
@@ -165,39 +168,32 @@ def generate_trigger_events(
     logger.info("开始生成触发事件...")
 
     validator = partial(validate_trigger_event_json, total_rows=total_rows)
+    
+    def stream_callback(content: str):
+        """流式响应回调示例"""
+        print(content, end='', flush=True)
 
-    try:
+    json_data = call_ai(
+        ai_prompt=prompt,
+        requirement_content=requirement,
+        extractor=extract_json_from_text,
+        validator=validator,
+        config=load_model_config(),
+        stream_callback=stream_callback
+    )
 
-        def stream_callback(content: str):
-            """流式响应回调示例"""
-            print(content, end='', flush=True)
+    output_path = output_dir / request_file.stem
+    save_content_to_file(
+        file_name=request_file.name,
+        output_dir=str(output_path),
+        content=json_data,
+        content_type="json"
+    )
 
-        json_data = call_ai(
-            ai_prompt=prompt,
-            requirement_content=requirement,
-            extractor=extract_json_from_text,
-            validator=validator,
-            max_retries=5,  # 参数名已从max_iterations改为max_retries
-            config=load_model_config(),  # 添加必需的config参数
-            stream_callback=stream_callback
-        )
+    logger.info(f"触发事件已保存至: {output_path}")
+    return json_data
 
-        output_path = output_dir / request_file.stem
-        save_content_to_file(
-            file_name=request_file.name,  # 使用完整的文件名
-            output_dir=str(output_path),  # 转换为字符串
-            content=json_data,
-            content_type="json"
-        )
-
-        logger.info(f"触发事件已保存至: {output_path}")
-        return json_data
-
-    except Exception as e:
-        logger.error(f"触发事件生成失败: {str(e)}")
-        raise
-
-
+@ai_processor(max_retries=3)
 def generate_cosmic_table(
         prompt: str,
         base_content: str,
