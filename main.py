@@ -7,7 +7,7 @@ from pathlib import Path
 import logging
 import argparse
 
-from cosmic_ai_cline import call_ai
+from cosmic_ai_cline import call_ai, load_model_config
 
 from read_file_content import (
     read_file_content,
@@ -64,8 +64,6 @@ def load_prompt_template(template_path: Path) -> str:
     except Exception as e:
         logger.error(f"Failed to load prompt template: {template_path}")
         raise RuntimeError(f"Prompt template loading failed: {e}") from e
-
-
 
 
 def main() -> None:
@@ -169,12 +167,19 @@ def generate_trigger_events(
     validator = partial(validate_trigger_event_json, total_rows=total_rows)
 
     try:
+
+        def stream_callback(content: str):
+            """流式响应回调示例"""
+            print(content, end='', flush=True)
+
         json_data = call_ai(
             ai_prompt=prompt,
             requirement_content=requirement,
             extractor=extract_json_from_text,
             validator=validator,
-            max_iterations=5
+            max_retries=5,  # 参数名已从max_iterations改为max_retries
+            config=load_model_config(),  # 添加必需的config参数
+            stream_callback=stream_callback
         )
 
         output_path = output_dir / request_file.stem
@@ -222,6 +227,10 @@ def generate_cosmic_table(
     logger.info("开始生成COSMIC表格...")
 
     try:
+        def stream_callback(content: str):
+            """流式响应回调示例"""
+            print(content, end='', flush=True)
+
         # 解析原始JSON数据
         cosmic_data = json.loads(json_data)
         # 创建临时目录
@@ -284,7 +293,9 @@ def generate_cosmic_table(
                     ai_prompt=prompt,
                     requirement_content=combined_content,
                     extractor=extract_table_from_text,
-                    validator=validator
+                    validator=validator,
+                    config=load_model_config(),  # 添加必需的config参数
+                    stream_callback=stream_callback
                 )
 
                 # 保存临时文件
@@ -328,7 +339,7 @@ def generate_cosmic_table(
         )
 
         # 生成Excel和Word
-        #processed_table = process_markdown_table(full_table)
+        # processed_table = process_markdown_table(full_table)
         for file_type in ["xlsx", "docx"]:
             save_content_to_file(
                 file_name=request_file.name,
@@ -337,7 +348,6 @@ def generate_cosmic_table(
                 content_type=file_type
             )
 
-
         # 清理临时文件
         shutil.rmtree(temp_dir)
         logger.info(f"COSMIC表格已保存至: {output_path}")
@@ -345,9 +355,6 @@ def generate_cosmic_table(
     except Exception as e:
         logger.error(f"COSMIC表格生成失败: {str(e)}")
         raise
-
-
-
 
 
 if __name__ == "__main__":
