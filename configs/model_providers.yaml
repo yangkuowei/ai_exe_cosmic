@@ -1,17 +1,43 @@
-providers:
-  dashscope:
-    model_name: "qwq-32b"
-    api_key_env: "DASHSCOPE_API_KEY"
-    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-  
-  deepseek:
-    model_name: "deepseek-reasoner"
-    api_key_env: "DEEP_SEEK_API_KEY"
-    base_url: "https://api.deepseek.com/v1"
-  
-  openai:
-    model_name: "gpt-4"
-    api_key_env: "OPENAI_API_KEY"
-    base_url: "https://api.openai.com/v1"
+# 默认使用的模型提供商（可选）
+default_provider: aliyun
 
-default_provider: "dashscope"
+providers:
+  302:
+    base_url: https://api.302.ai/v1/chat/completions
+    model_name: gemini-2.0-pro-exp-02-05
+    env_mapping:
+      api_key: API_302_KEY
+      base_url: API_302_BASE_URL
+      model_name: API_302_MODEL
+
+  deepseek:
+    base_url: https://api.deepseek.com/v1
+    model_name: deepseek-reasoner
+    env_mapping:
+      api_key: DEEP_SEEK_API_KEY
+      base_url: DEEPSEEK_BASE_URL
+      model_name: DEEPSEEK_MODEL
+
+  aliyun:
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model_name: qwq-32b
+    env_mapping:
+      api_key: DASHSCOPE_API_KEY
+      base_url: ALIYUN_BASE_URL
+      model_name: ALIYUN_MODEL
+
+  nvidia:
+    base_url: https://integrate.api.nvidia.com/v1
+    model_name: deepseek-ai/deepseek-r1
+    env_mapping:
+      api_key: NVIDIA_API_KEY
+      base_url: NVIDIA_BASE_URL
+      model_name: NVIDIA_MODEL
+
+  lmstudio:
+    base_url: http://127.0.0.1:1234/v1
+    model_name: qwen2.5-32b-instruct
+    env_mapping:
+      api_key: LMSTUDIO_API_KEY
+      base_url: LMSTUDIO_BASE_URL
+      model_name: LMSTUDIO_MODEL

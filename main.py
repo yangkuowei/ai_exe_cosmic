@@ -7,7 +7,7 @@ from pathlib import Path
 import logging
 import argparse
 
-from langchain_openai_client_v1 import call_ai
+from cosmic_ai_cline import call_ai
 
 from read_file_content import (
     read_file_content,

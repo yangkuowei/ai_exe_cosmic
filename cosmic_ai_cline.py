@@ -32,51 +32,52 @@ class ModelConfig:
         if not self.api_key:
             logger.warning(f"{self.provider} API密钥未配置，将尝试使用环境变量")
 
-def load_model_config(provider: str = "aliyun") -> ModelConfig:
+def load_model_config(provider: str = None) -> ModelConfig:
     """加载指定供应商的模型配置"""
-    configs = {
-        "302": ModelConfig(
-            provider="302",
-            base_url=os.getenv("API_302_BASE_URL", "https://api.302.ai/v1/chat/completions"),
-            model_name=os.getenv("API_302_MODEL", "gemini-2.0-pro-exp-02-05"),
-            api_key=os.getenv("API_302_KEY")
-        ),
-        "deepseek": ModelConfig(
-            provider="deepseek",
-            base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
-            model_name=os.getenv("DEEPSEEK_MODEL", "deepseek-reasoner"),
-            api_key=os.getenv("DEEP_SEEK_API_KEY")
-        ),
-        "aliyun": ModelConfig(
-            provider="aliyun",
-            base_url=os.getenv("ALIYUN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-            model_name=os.getenv("ALIYUN_MODEL", "qwq-32b"),
-            api_key=os.getenv("DASHSCOPE_API_KEY")
-        ),
-        "nvidia": ModelConfig(
-            provider="nvidia",
-            base_url=os.getenv("ALIYUN_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-            model_name=os.getenv("ALIYUN_MODEL", "deepseek-ai/deepseek-r1"),
-            api_key=os.getenv("NVIDIA_API_KEY")
-        ),
-        "lmstudio": ModelConfig(
-            provider="lmstudio",
-            base_url=os.getenv("BASE_URL", "http://127.0.0.1:1234/v1"),
-            model_name=os.getenv("model_name", "qwen2.5-32b-instruct"),
-            api_key=os.getenv("NVIDIA_API_KEY")
-        )
-    }
-
-    config = configs.get(provider.lower())
-    if not config:
+    import yaml
+    
+    # 加载配置文件
+    config_path = os.path.join(os.path.dirname(__file__), "configs/model_providers.yaml")
+    with open(config_path, encoding='utf-8') as f:
+        config_data = yaml.safe_load(f)
+    
+    # 获取默认提供商（如果未指定）
+    default_provider = config_data.get('default_provider', 'aliyun')
+    provider = provider.lower() if provider else default_provider
+    
+    provider_config = config_data['providers'].get(provider)
+    if not provider_config:
         raise ValueError(f"不支持的供应商: {provider}")
+    
+    # 环境变量覆盖逻辑
+    def get_env_value(env_var: str, default: str) -> str:
+        return os.getenv(env_var) or default
+    
+    # 构建配置对象
+    config = ModelConfig(
+        provider=provider,
+        base_url=get_env_value(
+            provider_config['env_mapping']['base_url'],
+            provider_config['base_url']
+        ),
+        model_name=get_env_value(
+            provider_config['env_mapping']['model_name'],
+            provider_config['model_name']
+        ),
+        api_key=os.getenv(provider_config['env_mapping']['api_key']),
+        temperature=0.9,
+        max_tokens=8192
+    )
 
     config.validate()
     return config
 
 # 初始化客户端
 current_config = load_model_config()
-client = OpenAI(api_key=current_config.api_key, base_url=current_config.base_url)
+client = OpenAI(
+    api_key=current_config.api_key,
+    base_url=current_config.base_url
+)
 
 def call_ai(
     ai_prompt: str,
