@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 import logging
 import argparse
+from dataclasses import dataclass
 
 from cosmic_ai_cline import call_ai, load_model_config
 
@@ -29,32 +30,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class ProjectConfig:
-    """项目路径配置类"""
 
-    def __init__(self):
-        self.base_dir = Path(__file__).parent.resolve()
+@dataclass
+class ProjectPaths:
+    """项目路径配置"""
+    base_dir: Path = Path(__file__).parent.resolve()
+    ai_promote: Path = base_dir / "ai_promote"
+    requirements: Path = base_dir / "requirements"
+    output: Path = base_dir / "out_put_files"
+    trigger_events_template: Path = ai_promote / "create_trigger_events.md"
+    cosmic_table_template: Path = ai_promote / "create_cosmic_table_from_trigger_events.md"
 
-        # 定义项目目录结构
-        self.ai_promote_dir = self.base_dir / "ai_promote"
-        self.requirements_dir = self.base_dir / "requirements"
-        self.output_dir = self.base_dir / "out_put_files"
-
-        # 定义模板文件
-        self.trigger_events_template = self.ai_promote_dir / "create_trigger_events.md"
-        self.cosmic_table_template = self.ai_promote_dir / "create_cosmic_table_from_trigger_events.md"
-
-    def validate_paths(self) -> None:
-        """验证必要目录是否存在"""
-        required_dirs = [
-            self.ai_promote_dir,
-            self.requirements_dir,
-            self.output_dir
-        ]
-
-        for directory in required_dirs:
-            if not directory.exists():
-                raise FileNotFoundError(f"Required directory not found: {directory}")
+    def __post_init__(self):
+        """初始化时自动验证路径"""
+        required_dirs = [self.ai_promote, self.requirements, self.output]
+        missing = [str(d) for d in required_dirs if not d.exists()]
+        if missing:
+            raise FileNotFoundError(f"Missing required directories: {', '.join(missing)}")
 
 
 def load_prompt_template(template_path: Path) -> str:
@@ -81,18 +73,19 @@ def main() -> None:
         parser.add_argument('--stage2', action='store_true', help='仅执行阶段2（生成COSMIC表格）')
         args = parser.parse_args()
 
-        config = ProjectConfig()
-        config.validate_paths()
+        config = ProjectPaths()
 
         # 读取需求文件（自动获取最新或通过参数指定）
 
-        # 自动获取requirements目录下最新的.txt文件
-        txt_files = list(config.requirements_dir.glob("*.txt"))
+        # 使用pathlib优化路径操作
+        txt_files = sorted(
+            config.requirements.glob("*.txt"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True
+        )
         if not txt_files:
-            raise FileNotFoundError(f"需求目录中未找到.txt文件: {config.requirements_dir}")
+            raise FileNotFoundError(f"需求目录中未找到.txt文件: {config.requirements}")
 
-        # 按修改时间排序获取最新文件
-        txt_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
         request_file = txt_files[0]
 
         if len(txt_files) > 1:
@@ -114,11 +107,11 @@ def main() -> None:
         logger.info(f"成功读取需求文件: {request_file.name}")
 
         json_str = ""
-        output_path = config.output_dir / request_file.stem
+        output_path = config.output / request_file.stem
 
-        # 阶段执行逻辑
-        run_stage1 = args.stage1 or (not args.stage1 and not args.stage2)
-        run_stage2 = args.stage2 or (not args.stage1 and not args.stage2)
+        # 改进阶段执行逻辑
+        run_stage1 = args.stage1 or not args.stage2
+        run_stage2 = args.stage2 or not args.stage1
 
         # run_stage1 = False
         if run_stage1:
@@ -127,7 +120,7 @@ def main() -> None:
                 prompt=load_prompt_template(config.trigger_events_template),
                 requirement=requirement_content,
                 total_rows=total_rows,
-                output_dir=config.output_dir,
+                output_dir=config.output,
                 request_file=request_file
             )
         elif run_stage2:
@@ -144,14 +137,20 @@ def main() -> None:
                 prompt=load_prompt_template(config.cosmic_table_template),
                 base_content=requirement_content,
                 json_data=json_str,
-                output_dir=config.output_dir,
+                output_dir=config.output,
                 request_file=request_file,
                 request_name=request_name
             )
 
-    except Exception as e:
-        logger.error(f"程序运行失败: {str(e)}")
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"初始化失败: {str(e)}")
         raise
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON解析失败: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"未处理的异常: {str(e)}")
+        raise RuntimeError("程序执行异常") from e
 
 
 from decorators import ai_processor
@@ -201,7 +200,7 @@ def generate_cosmic_table(
         output_dir: Path,
         request_file: Path,
         request_name: str,
-        batch_size: int = 3,
+        batch_size: int = 5,
 ) -> None:
     """生成COSMIC表格（支持分批处理及独立执行）
     
@@ -211,7 +210,7 @@ def generate_cosmic_table(
         json_data: 触发事件JSON数据（字符串格式）
         output_dir: 输出目录
         request_file: 原始需求文件路径
-        batch_size: 每批处理事件数（默认3）
+        batch_size: 每批处理事件数（默认5）
         
     执行逻辑:
         1. 检查输入JSON数据有效性
