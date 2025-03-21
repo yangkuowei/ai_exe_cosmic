@@ -32,7 +32,7 @@ class ModelConfig:
         if not self.api_key:
             logger.warning(f"{self.provider} API密钥未配置，将尝试使用环境变量")
 
-def load_model_config(provider: str = "LMStudio") -> ModelConfig:
+def load_model_config(provider: str = "aliyun") -> ModelConfig:
     """加载指定供应商的模型配置"""
     configs = {
         "302": ModelConfig(

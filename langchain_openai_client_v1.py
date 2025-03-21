@@ -1,12 +1,27 @@
 import os
+from typing import Callable, Tuple, Dict, List, Optional, TypeVar
 
 from langchain_openai import ChatOpenAI
-from langchain.schema import SystemMessage
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_community.chat_message_histories import ChatMessageHistory
+from pydantic import BaseModel
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-# 没有思考过程，暂不启用
-from pydantic import BaseModel, ValidationError
+from langchain_core.chat_history import (
+    BaseChatMessageHistory,
+    InMemoryChatMessageHistory,
+)
+from langchain_core.runnables.history import RunnableWithMessageHistory
+
+store = {}
+
+
+def get_session_history(session_id: str) -> BaseChatMessageHistory:
+    if session_id not in store:
+        store[session_id] = InMemoryChatMessageHistory()
+    return store[session_id]
+
 
 class ModelProvider(BaseModel):
     """模型供应商基类"""
@@ -18,23 +33,25 @@ class ModelProvider(BaseModel):
     def api_key(self) -> str:
         return os.getenv(self.api_key_env)
 
+
 # 加载配置文件
 try:
     import yaml
+
     config_path = os.path.join(os.path.dirname(__file__), 'configs/model_providers.yaml')
-    
+
     with open(config_path) as f:
         config = yaml.safe_load(f)
-        
+
     # 构建供应商配置
     PROVIDERS = {
         name: ModelProvider(**values)
         for name, values in config['providers'].items()
     }
-    
+
     # 获取默认厂商（环境变量优先）
     PROVIDER_NAME = os.getenv("LLM_PROVIDER", config['default_provider'])
-    
+
 except FileNotFoundError:
     raise RuntimeError(f"Config file not found: {config_path}")
 except KeyError as e:
@@ -50,10 +67,9 @@ CURRENT_PROVIDER = PROVIDERS[PROVIDER_NAME]
 
 class LangChainCosmicTableGenerator:
     def __init__(self, provider: ModelProvider = CURRENT_PROVIDER):
-        """Initialize with provider configuration"""
         if not provider.api_key:
             raise ValueError(f"API key not found in env: {provider.api_key_env}")
-            
+
         self.provider = provider
         self.chat = ChatOpenAI(
             openai_api_key=provider.api_key,
@@ -66,74 +82,76 @@ class LangChainCosmicTableGenerator:
         )
         self.chat_history = ChatMessageHistory()
 
-
     def generate_table(
-        self, 
-        cosmic_ai_promote: str,
-        requirement_content: str,
-        extractor: callable,
-        validator: callable,
-        max_iterations: int = 3
+            self,
+            cosmic_ai_promote: str,
+            requirement_content: str,
+            extractor: callable,
+            validator: callable,
+            max_iterations: int = 3
     ) -> str:
 
-        # 添加系统消息
-        self.chat_history.add_message(SystemMessage(content=cosmic_ai_promote))
-        # 添加初始用户消息
-        self.chat_history.add_user_message(requirement_content)
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "{cosmic_ai_promote}.",
+                ),
+                MessagesPlaceholder(variable_name="messages"),
+            ]
+        )
+
+        chain = prompt | self.chat
+
+        with_message_history = RunnableWithMessageHistory(
+            chain,
+            get_session_history,
+            input_messages_key="messages",
+        )
+        config = {"configurable": {"session_id": "abcd"}}
 
         conversation_idx = 0
 
+        user_centent = requirement_content
         while True:
-            print("=" * 20 + f"第{conversation_idx + 1}轮对话" + "=" * 20)
-            conversation_idx += 1
 
-            # 使用 chat_history.messages 获取所有消息
-            full_response = []
-            # 创建自定义回调处理器
+            answer_content = []
+
             class StreamCallback(StreamingStdOutCallbackHandler):
                 def on_llm_new_token(self, token: str, **kwargs) -> None:
-                    print(token, end='', flush=True)  # 实时流式输出
-                    full_response.append(token)
-            
+                    if token:
+                        print(token, end='', flush=True)  # 实时流式输出
+                        answer_content.append(token)
+
             # 使用自定义回调重新初始化
             self.chat.callbacks = [StreamCallback()]
-            
-            response = self.chat.invoke(self.chat_history.messages)
-            full_content = ''.join(full_response)
-            
-            # 记录完整响应到日志
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.debug(f"完整响应内容: {full_content}")
 
-            extracted_data = extractor(full_content)
+            response = with_message_history.invoke(
+                {"messages": [HumanMessage(content=user_centent)], "cosmic_ai_promote": cosmic_ai_promote},
+                config=config,
+            )
+
+            answer_content = ''.join(answer_content)
+
+            extracted_data = extractor(answer_content)
             is_valid, error = validator(extracted_data)
 
-            if is_valid:
+            if is_valid or conversation_idx > max_iterations:
                 print("校验通过")
-                final_answer = extracted_data
-                break
+                return extracted_data
 
             print(f"校验失败：{error}")
-            # 添加 AI 消息和新的用户消息（错误信息）到 chat history
-            self.chat_history.add_ai_message(response.content)
-            self.chat_history.add_user_message(error)
 
-
-            if conversation_idx >= max_iterations:
-                final_answer = extracted_data
-                break
-
-        return final_answer
+            user_centent = f"校验失败：{error}"
 
 
 def call_ai(
-    ai_prompt: str,
-    requirement_content: str,
-    extractor: callable,
-    validator: callable,
-    max_iterations: int = 2,
-    provider: ModelProvider = CURRENT_PROVIDER
+        ai_prompt: str,
+        requirement_content: str,
+        extractor: callable,
+        validator: callable,
+        max_iterations: int = 2,
+        provider: ModelProvider = CURRENT_PROVIDER
 ) -> str:
     """调用AI生成表格的统一入口
     
