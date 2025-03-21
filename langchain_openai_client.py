@@ -6,29 +6,63 @@ from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_community.chat_message_histories import ChatMessageHistory
 
 # 这个不能输出思考过程，暂时不用
-def get_config(key, default=None):
-    return os.getenv(key, default)
+from typing import Dict, Type
+from pydantic import BaseModel, ValidationError
 
-MODEL_NAME = get_config("MODEL_NAME", 'qwq-32b')
-BASE_URL = get_config("BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-API_KEY = get_config("DASHSCOPE_API_KEY")
+class ModelProvider(BaseModel):
+    """模型供应商基类"""
+    model_name: str
+    api_key_env: str
+    base_url: str
+
+    @property
+    def api_key(self) -> str:
+        return os.getenv(self.api_key_env)
+
+# 支持的厂商配置
+PROVIDERS: Dict[str, Type[ModelProvider]] = {
+    "dashscope": ModelProvider(
+        model_name="qwq-32b",
+        api_key_env="DASHSCOPE_API_KEY",
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+    ),
+    "deepseek": ModelProvider(
+        model_name="deepseek-reasoner",
+        api_key_env="DEEP_SEEK_API_KEY", 
+        base_url="https://api.deepseek.com/v1"
+    ),
+    "openai": ModelProvider(
+        model_name="gpt-4",
+        api_key_env="OPENAI_API_KEY",
+        base_url="https://api.openai.com/v1"
+    )
+}
+
+# 从环境变量获取厂商配置
+PROVIDER_NAME = os.getenv("LLM_PROVIDER", "deepseek")
+if PROVIDER_NAME not in PROVIDERS:
+    raise ValueError(f"Unsupported provider: {PROVIDER_NAME}")
+
+CURRENT_PROVIDER = PROVIDERS[PROVIDER_NAME]
 
 
 class LangChainCosmicTableGenerator:
-    def __init__(self, model_name=MODEL_NAME, api_key=API_KEY, base_url=BASE_URL):
-        self.model_name = model_name
-        self.api_key = api_key
-        self.base_url = base_url
+    def __init__(self, provider: ModelProvider = CURRENT_PROVIDER):
+        """Initialize with provider configuration"""
+        if not provider.api_key:
+            raise ValueError(f"API key not found in env: {provider.api_key_env}")
+            
+        self.provider = provider
         self.chat = ChatOpenAI(
-            openai_api_key=self.api_key,
-            openai_api_base=self.base_url,
-            model_name=self.model_name,
+            openai_api_key=provider.api_key,
+            openai_api_base=provider.base_url,
+            model_name=provider.model_name,
             streaming=True,
             callbacks=[StreamingStdOutCallbackHandler()],
             temperature=0,
             max_tokens=8192
         )
-        self.chat_history = ChatMessageHistory()  # 初始化 ChatMessageHistory
+        self.chat_history = ChatMessageHistory()
 
 
     def generate_table(
@@ -98,9 +132,23 @@ def call_ai(
     requirement_content: str,
     extractor: callable,
     validator: callable,
-    max_iterations: int = 2
+    max_iterations: int = 2,
+    provider: ModelProvider = CURRENT_PROVIDER
 ) -> str:
-    generator = LangChainCosmicTableGenerator()
+    """调用AI生成表格的统一入口
+    
+    Args:
+        ai_prompt: AI系统提示语
+        requirement_content: 需求内容文本
+        extractor: 结果提取函数
+        validator: 结果验证函数
+        max_iterations: 最大对话轮次
+        provider: 模型供应商配置
+        
+    Returns:
+        经过验证的最终结果
+    """
+    generator = LangChainCosmicTableGenerator(provider=provider)
     return generator.generate_table(
         ai_prompt,
         requirement_content,
