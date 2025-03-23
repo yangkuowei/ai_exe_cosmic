@@ -192,7 +192,7 @@ def markdown_table_to_list(markdown_table_str):
     header_match = re.search(r'<thead>.*?<tr>(.*?)</tr>.*?</thead>', table_html, re.DOTALL)
     if header_match:
         header_row_html = header_match.group(1)
-        header = [th.strip() for th in re.findall(r'<th>(.*?)</th>', header_row_html)]
+        header = [th.strip() for th in re.findall(r'<th.*>(.*?)</th>', header_row_html)]
 
     # 提取数据行
     body_match = re.search(r'<tbody>(.*?)</tbody>', table_html, re.DOTALL)
@@ -200,7 +200,7 @@ def markdown_table_to_list(markdown_table_str):
         body_html = body_match.group(1)
         row_matches = re.findall(r'<tr>(.*?)</tr>', body_html, re.DOTALL)
         for row_html in row_matches:
-            row_data = [td.strip() for td in re.findall(r'<td>(.*?)</td>', row_html)]
+            row_data = [td.strip() for td in re.findall(r'<td.*>(.*?)</td>', row_html)]
             if header:
                 rows.append(dict(zip(header, row_data)))  # 与标题对应
             else:
@@ -320,7 +320,7 @@ def validate_trigger_event_json(json_str, total_rows) -> Tuple[bool, str]:
                     continue
 
                 # 3. 数量和关系校验
-                if not (1 < len(event["functional_processes"]) < 6):
+                if not (1 <= len(event["functional_processes"]) <= 6):
                     errors.append(
                         f"数量校验错误：'functional_user_requirements'[{req_index}]['trigger_events'][{event_index}]['functional_processes'] 应该包含 1 到 6 个元素。一个触发事件一般对应1到6个功能过程")
 

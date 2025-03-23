@@ -3,6 +3,7 @@ import logging
 from typing import Callable, Tuple, Any, Dict, List, Optional, TypeVar
 from threading import Lock
 
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_core.messages import HumanMessage
@@ -57,7 +58,7 @@ class LangChainCosmicTableGenerator:
             openai_api_base=config.base_url,
             model_name=config.model_name,
             streaming=True,
-            callbacks=[StreamingStdOutCallbackHandler()],
+            callbacks=[BaseCallbackHandler()],
             temperature=config.temperature,
             max_tokens=config.max_tokens
         )
@@ -134,8 +135,9 @@ class LangChainCosmicTableGenerator:
                     raise ValueError(f"验证失败：{error}")
 
                 requirement_content = self._build_retry_prompt(error)
+                logger.info(requirement_content)
                 logger.info("第%d次重试，更新请求内容", attempt+1)
-                
+
             except Exception as e:
                 logger.error("生成过程中发生异常：%s", str(e))
                 raise RuntimeError("COSMIC表格生成失败") from e
@@ -144,13 +146,15 @@ class LangChainCosmicTableGenerator:
 
         return None
 
-    def _create_stream_callback(self, buffer: List[str]) -> StreamingStdOutCallbackHandler:
+    def _create_stream_callback(self, buffer: List[str]) -> BaseCallbackHandler:
         """创建流式回调处理器"""
-        class StreamCallback(StreamingStdOutCallbackHandler):
+        class StreamCallback(BaseCallbackHandler):
             def on_llm_new_token(self, token: str, **kwargs) -> None:
                 if token:
                     print(token, end='', flush=True)  # 实时流式输出
                     buffer.append(token)
+                else:
+                    print()
 
         return StreamCallback()
 
