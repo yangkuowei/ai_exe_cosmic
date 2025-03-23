@@ -1,30 +1,75 @@
+# 标准库导入
 import os
-
 import re
-import pandas as pd
-
-from openpyxl import load_workbook
-from docx import Document
-from docx.shared import Pt, RGBColor
-from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-from openpyxl.styles import Alignment
+import logging
 from pathlib import Path
-from typing import  List
+from typing import Optional, Union, List
+
+# 第三方库导入
+import pandas as pd
+from docx import Document
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.shared import Pt, RGBColor
+from openpyxl import load_workbook
+from openpyxl.styles import Alignment
 # 文件操作
 
-def read_file_content(file_path):
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                return file.read().strip()
-        except Exception as e:
-            print(f"读取文件出错: {e}")
-            exit(1)
-    else:
-        print(f"文件不存在: {file_path}")
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+
+def read_file_content(file_path: Union[str, Path]) -> Optional[str]:
+    """读取文件内容并返回去除首尾空格的字符串
+    
+    Args:
+        file_path: 文件路径，支持字符串或Path对象
+        
+    Returns:
+        str: 文件内容（去除首尾空格）
+        None: 文件不存在或读取失败
+        
+    Raises:
+        FileNotFoundError: 文件不存在
+        IOError: 文件读取失败
+    """
+    path = Path(file_path) if isinstance(file_path, str) else file_path
+    
+    if not path.exists():
+        raise FileNotFoundError(f"文件不存在: {file_path}")
+    
+    try:
+        with path.open('r', encoding='utf-8') as file:
+            return file.read().strip()
+    except UnicodeDecodeError as e:
+        raise IOError(f"文件解码失败: {path}") from e
+    except Exception as e:
+        raise IOError(f"读取文件出错: {path}") from e
 
 
-def save_content_to_file(file_name: str, output_dir: str, content: str, content_type: str = "text"):
+# 常量定义
+EXCEL_COLUMN_NAMES = {
+    "requirement": 2,  # 需求列索引
+    "process": 4       # 流程列索引
+}
+
+DEFAULT_FONT_STYLES = {
+    "heading1": {"name": "黑体", "size": Pt(22), "color": RGBColor(0, 0, 0)},
+    "heading2": {"name": "黑体", "size": Pt(16), "color": RGBColor(0, 0, 0)},
+    "body": {"name": "宋体", "size": Pt(10.5)}
+}
+
+def save_content_to_file(
+    file_name: str, 
+    output_dir: Union[str, Path],
+    content: str, 
+    content_type: str = "text"
+) -> Path:
     """
     保存内容到文件，支持不同类型的文件。
 
@@ -76,10 +121,10 @@ def save_content_to_file(file_name: str, output_dir: str, content: str, content_
             with open(output_filename, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        print(f"已创建文件: {output_filename}")
+        logging.info(f"已创建文件: {output_filename}")
 
     except Exception as e:
-        print(f"处理文件 {file_name} 时发生错误: {e}")
+        logging.error(f"处理文件 {file_name} 时发生错误", exc_info=True)
 
 
 def extract_content_from_requst(text, extract_type: str = "total_rows"):
@@ -167,7 +212,20 @@ def process_markdown_table(markdown_table_string, num_cols_to_process=5):
 
 
 
-def create_function_design_doc(excel_file, docx_file):
+def apply_font_style(run, style_name: str) -> None:
+    """应用预定义的字体样式
+    
+    Args:
+        run: docx的Run对象
+        style_name: 样式名称（heading1/heading2/body）
+    """
+    style = DEFAULT_FONT_STYLES[style_name]
+    run.font.name = style["name"]
+    run.font.size = style["size"]
+    if "color" in style:
+        run.font.color.rgb = style["color"]
+
+def create_function_design_doc(excel_file: Union[str, Path], docx_file: Union[str, Path]) -> None:
     """
     根据COSMIC Excel表格生成功能设计文档（.docx）。
     (处理合并单元格，设置标题颜色为黑色)
@@ -194,21 +252,18 @@ def create_function_design_doc(excel_file, docx_file):
     current_requirement = None
 
     for row in sheet.iter_rows(min_row=2, values_only=True):
-        requirement = row[2]
-        process = row[4]
+        requirement = row[EXCEL_COLUMN_NAMES["requirement"]]
+        process = row[EXCEL_COLUMN_NAMES["process"]]
 
         if requirement:
             current_requirement = requirement
             section_num += 0.1
             section_num = round(section_num, 1)
 
-            # 功能用户需求标题
+            # 添加功能用户需求标题
             heading = document.add_heading(f"{section_num} {current_requirement}", level=2)
-            run = heading.runs[0]
-            run.font.name = '黑体'
-            run.font.size = Pt(16)
-            run.font.color.rgb = RGBColor(0, 0, 0)  # 设置为黑色
-            current_process_num = 1  # 重置计数器
+            apply_font_style(heading.runs[0], "heading2")
+            current_process_num = 1  # 重置流程计数器
 
         if process:
             paragraph = document.add_paragraph(f"（{current_process_num}）{process}")

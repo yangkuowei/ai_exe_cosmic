@@ -153,8 +153,6 @@ class LangChainCosmicTableGenerator:
                 if token:
                     print(token, end='', flush=True)  # 实时流式输出
                     buffer.append(token)
-                else:
-                    print()
 
         return StreamCallback()
 

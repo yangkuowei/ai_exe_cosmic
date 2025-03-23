@@ -31,7 +31,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-
 @dataclass
 class ProjectPaths:
     """项目路径配置"""
@@ -156,6 +155,7 @@ def main() -> None:
 
 from decorators import ai_processor
 
+
 @ai_processor(max_retries=3)
 def generate_trigger_events(
         prompt: str,
@@ -174,7 +174,7 @@ def generate_trigger_events(
         requirement_content=requirement,
         extractor=extract_json_from_text,
         validator=validator,
-        max_chat_count= 5,
+        max_chat_count=5,
         config=load_model_config()
     )
 
@@ -188,6 +188,7 @@ def generate_trigger_events(
 
     logger.info(f"触发事件已保存至: {output_path}")
     return json_data
+
 
 @ai_processor(max_retries=3)
 def generate_cosmic_table(
@@ -347,5 +348,7 @@ def generate_cosmic_table(
 
 
 if __name__ == "__main__":
-    main()
-    exit(1)
+    try:
+        main()
+    finally:
+        exit(1)

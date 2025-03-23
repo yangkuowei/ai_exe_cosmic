@@ -1,5 +1,5 @@
 # 默认使用的模型提供商（可选）
-default_provider: lmstudio
+default_provider: deepseek
 
 providers:
   302:
@@ -48,3 +48,10 @@ providers:
       api_key: HUNYUAN_API_KEY
       base_url: HUNYUAN_BASE_URL
       model_name: HUNYUAN_MODEL
+  siliconflow:
+    base_url: https://api.siliconflow.cn/v1/
+    model_name: Qwen/Qwen2.5-Coder-32B-Instruct
+    env_mapping:
+      api_key: SILICONFLOW_API_KEY
+      base_url: SILICONFLOW_BASE_URL
+      model_name: SILICONFLOW_MODEL
