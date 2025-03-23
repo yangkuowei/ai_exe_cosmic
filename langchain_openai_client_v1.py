@@ -5,7 +5,6 @@ from threading import Lock
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.chat_history import (
@@ -127,7 +126,7 @@ class LangChainCosmicTableGenerator:
                 is_valid, error = validator(extracted_data)
 
                 if is_valid:
-                    logger.info("校验通过")
+                    logger.info(f"\n校验通过")
                     return extracted_data
                     
                 if attempt == max_chat_count:
@@ -158,7 +157,7 @@ class LangChainCosmicTableGenerator:
 
     def _build_retry_prompt(self, error: str) -> str:
         """构建重试提示模板"""
-        return f"""上次生成内容未通过验证：{error}
+        return f"""\n上次生成内容未通过验证：{error}
 请根据以下要求重新生成：
 1. 严格遵循COSMIC规范
 2. 确保数据结构完整
