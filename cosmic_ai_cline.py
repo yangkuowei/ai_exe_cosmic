@@ -136,7 +136,7 @@ def load_model_config(provider: str = None, config_dir: str = None) -> ModelConf
             temperature=provider_config.get('temperature', 0.9),
             max_tokens=provider_config.get('max_tokens', 8192),
             timeout=provider_config.get('timeout', 60.0),
-            max_retries=provider_config.get('max_retries', 3)
+            max_retries=provider_config.get('max_chat_cout', 3)
         )
         
         config.validate()
@@ -169,8 +169,7 @@ def call_ai(
     extractor: Callable[[str], T],
     validator: Callable[[T], Tuple[bool, str]],
     config: ModelConfig,
-    max_retries: int = 3,  # 原max_iterations参数已重命名为max_retries
-    stream_callback: Optional[Callable[[str], None]] = None,
+    max_chat_cout: int = 3,  # 原max_iterations参数已重命名为max_retries
 ) -> T:
     """AI大模型调用与验证流程
     
@@ -180,7 +179,7 @@ def call_ai(
         extractor: 内容提取函数
         validator: 数据验证函数
         config: 模型配置
-        max_retries: 最大重试次数 (包含网络错误和验证错误)
+        max_chat_cout: 最大对话次数
         stream_callback: 流式响应回调函数
         
     Returns:
@@ -190,18 +189,13 @@ def call_ai(
         ValidationError: 数据验证失败超过最大重试次数
         APIConnectionError: API连接失败超过最大重试次数
         APIError: API返回错误超过最大重试次数
-        
-    Example:
-        >>> config = load_model_config()
-        >>> result = call_ai(
-        >>>     "你是一个助手",
-        >>>     "生成测试数据",
-        >>>     extractor,
-        >>>     validator,
-        >>>     config,
-        >>>     max_retries=3
-        >>> )
+
     """
+
+    def stream_callback(content: str):
+        """流式响应回调示例"""
+        print(content, end='', flush=True)
+
     client = create_client(config)
     messages = [
         {"role": "system", "content": ai_prompt},
@@ -209,9 +203,9 @@ def call_ai(
     ]
     
     last_error = None
-    for attempt in range(1, max_retries + 1):
+    for attempt in range(1, max_chat_cout + 1):
         try:
-            logger.info(f"Attempt {attempt}/{max_retries}")
+            logger.info(f"Attempt {attempt}/{max_chat_cout}")
             completion = client.chat.completions.create(
                 model=config.model_name,
                 messages=messages,
@@ -235,17 +229,17 @@ def call_ai(
                 
             logger.warning(f"校验未通过: {error_msg}")
             messages.append({"role": "user", "content": f"生成内容校验未通过: {error_msg}\n**请严格按照cosmic编写规范重新输出完整内容**"})
-            last_error = ValidationError(f"验证失败: {error_msg}", max_retries=max_retries)
+            last_error = ValidationError(f"验证失败: {error_msg}", max_retries=max_chat_cout)
 
-            if attempt >= max_retries:
+            if attempt >= max_chat_cout:
                 return extracted_data #强制返回，人工处理错误
 
         except APIConnectionError as e:
-            logger.warning(f"连接失败 ({attempt}/{max_retries}): {str(e)}")
+            logger.warning(f"连接失败 ({attempt}/{max_chat_cout}): {str(e)}")
             last_error = e
             time.sleep(min(2 ** attempt, 10))  # 指数退避
         except APIError as e:
-            logger.error(f"API错误 ({attempt}/{max_retries}): {str(e)}")
+            logger.error(f"API错误 ({attempt}/{max_chat_cout}): {str(e)}")
             last_error = e
             time.sleep(1)
         except Exception as e:
@@ -255,8 +249,8 @@ def call_ai(
 
     if last_error:
         if isinstance(last_error, ValidationError):
-            raise ValidationError(f"超过最大验证重试次数: {max_retries}") from last_error
-        raise AIError(f"超过最大重试次数: {max_retries}") from last_error
+            raise ValidationError(f"超过最大验证重试次数: {max_chat_cout}") from last_error
+        raise AIError(f"超过最大重试次数: {max_chat_cout}") from last_error
     raise AIError("未知错误导致处理失败")
 
 def process_stream_response(

@@ -1,10 +1,9 @@
 import os
-from typing import Callable, Tuple, Dict, List, Optional, TypeVar
+from typing import Callable, Tuple, Any
 
 from langchain_openai import ChatOpenAI
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_community.chat_message_histories import ChatMessageHistory
-from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
@@ -23,62 +22,29 @@ def get_session_history(session_id: str) -> BaseChatMessageHistory:
     return store[session_id]
 
 
-class ModelProvider(BaseModel):
-    """模型供应商基类"""
-    model_name: str
-    api_key_env: str
-    base_url: str
+from cosmic_ai_cline import load_model_config, ModelConfig, ConfigurationError
 
-    @property
-    def api_key(self) -> str:
-        return os.getenv(self.api_key_env)
-
-
-# 加载配置文件
+# 加载模型配置
 try:
-    import yaml
-
-    config_path = os.path.join(os.path.dirname(__file__), 'configs/model_providers.yaml')
-
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
-
-    # 构建供应商配置
-    PROVIDERS = {
-        name: ModelProvider(**values)
-        for name, values in config['providers'].items()
-    }
-
-    # 获取默认厂商（环境变量优先）
-    PROVIDER_NAME = os.getenv("LLM_PROVIDER", config['default_provider'])
-
-except FileNotFoundError:
-    raise RuntimeError(f"Config file not found: {config_path}")
-except KeyError as e:
-    raise RuntimeError(f"Missing required config section: {e}")
-except Exception as e:
-    raise RuntimeError(f"Error loading config: {str(e)}")
-
-if PROVIDER_NAME not in PROVIDERS:
-    raise ValueError(f"Unsupported provider: {PROVIDER_NAME}. Available: {', '.join(PROVIDERS.keys())}")
-
-CURRENT_PROVIDER = PROVIDERS[PROVIDER_NAME]
+    config = load_model_config(config_dir=os.path.dirname(__file__))
+except ConfigurationError as e:
+    raise RuntimeError(f"配置加载失败: {str(e)}")
 
 
 class LangChainCosmicTableGenerator:
-    def __init__(self, provider: ModelProvider = CURRENT_PROVIDER):
-        if not provider.api_key:
-            raise ValueError(f"API key not found in env: {provider.api_key_env}")
+    def __init__(self, config: ModelConfig = config):
+        if not config.api_key:
+            raise ValueError(f"API key not found in environment variables")
 
-        self.provider = provider
+        self.config = config
         self.chat = ChatOpenAI(
-            openai_api_key=provider.api_key,
-            openai_api_base=provider.base_url,
-            model_name=provider.model_name,
+            openai_api_key=config.api_key,
+            openai_api_base=config.base_url,
+            model_name=config.model_name,
             streaming=True,
             callbacks=[StreamingStdOutCallbackHandler()],
-            temperature=0,
-            max_tokens=8192
+            temperature=config.temperature,
+            max_tokens=config.max_tokens
         )
         self.chat_history = ChatMessageHistory()
 
@@ -88,10 +54,11 @@ class LangChainCosmicTableGenerator:
             requirement_content: str,
             extractor: callable,
             validator: callable,
-            max_iterations: int = 3
+            max_chat_cout: int = 3
     ) -> str:
 
-        cosmic_ai_promote = cosmic_ai_promote.replace("{", "\{").replace("}", "\}")
+        cosmic_ai_promote = cosmic_ai_promote.replace("{", "{{").replace("}", "{{")
+
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -137,7 +104,7 @@ class LangChainCosmicTableGenerator:
             if is_valid:
                 print("校验通过")
                 return extracted_data
-            if conversation_idx > max_iterations:
+            if conversation_idx > max_chat_cout:
                 print("超过最大对话次数AI仍然未生成符合校验的内容，强制返回")
                 return extracted_data
 
@@ -148,10 +115,10 @@ class LangChainCosmicTableGenerator:
 def call_ai(
         ai_prompt: str,
         requirement_content: str,
-        extractor: callable,
-        validator: callable,
-        max_iterations: int = 2,
-        provider: ModelProvider = CURRENT_PROVIDER
+        extractor: Callable[[str], Any],
+        validator: Callable[[Any], Tuple[bool, str]],
+        config: ModelConfig,
+        max_chat_cout: int = 3
 ) -> str:
     """调用AI生成表格的统一入口
     
@@ -160,17 +127,18 @@ def call_ai(
         requirement_content: 需求内容文本
         extractor: 结果提取函数
         validator: 结果验证函数
-        max_iterations: 最大对话轮次
-        provider: 模型供应商配置
+        config: 模型配置
+        max_chat_cout: 最大重试次数(与AI对话次数)
+        stream_callback: 流式响应回调函数
         
     Returns:
         经过验证的最终结果
     """
-    generator = LangChainCosmicTableGenerator(provider=provider)
+    generator = LangChainCosmicTableGenerator(config=config)
     return generator.generate_table(
         ai_prompt,
         requirement_content,
         extractor,
         validator,
-        max_iterations
+        max_chat_cout
     )
