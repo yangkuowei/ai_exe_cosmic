@@ -8,7 +8,7 @@ import logging
 import argparse
 from dataclasses import dataclass
 
-from cosmic_ai_cline import load_model_config
+from ai_common import load_model_config
 from langchain_openai_client_v1 import call_ai
 
 from read_file_content import (
