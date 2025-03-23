@@ -1,80 +1,10 @@
-from typing import Callable, Tuple, Dict, List, Optional, TypeVar, Any
+from typing import Callable, Tuple, Optional, Any
 from openai import OpenAI, APIConnectionError, APIError
 import os
-import logging
-from dataclasses import dataclass
 import time
 from pathlib import Path
 import httpx
-
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-T = TypeVar('T')
-
-class AIError(Exception):
-    """Base exception for AI operations"""
-    def __init__(self, message: str, max_retries: int = None):
-        super().__init__(message)
-        self.max_retries = max_retries
-
-class ValidationError(AIError):
-    """Data validation failed after max retries"""
-
-class ConfigurationError(AIError):
-    """Invalid configuration detected"""
-
-@dataclass
-class ModelConfig:
-    """大模型配置类
-    
-    Attributes:
-        provider: 服务提供商名称 (e.g. 'aliyun', 'openai')
-        base_url: API基础地址
-        model_name: 模型名称
-        api_key: 认证密钥 (可选)
-        temperature: 生成温度 (0.0~2.0)
-        max_tokens: 最大生成token数
-        timeout: 请求超时时间(秒)
-        max_retries: 最大重试次数
-    """
-    provider: str
-    base_url: str
-    model_name: str
-    api_key: Optional[str] = None
-    temperature: float = 0.9
-    max_tokens: int = 8192
-    timeout: float = 30.0
-    max_retries: int = 3
-
-    def validate(self) -> None:
-        """验证配置有效性
-        
-        Raises:
-            ConfigurationError: 当配置不合法时抛出
-        """
-        errors = []
-        if not self.base_url:
-            errors.append(f"{self.provider}配置缺少base_url")
-        if not self.model_name:
-            errors.append(f"{self.provider}配置缺少model_name")
-        if not self.api_key:
-            logger.warning(f"{self.provider} API密钥未配置，将尝试使用环境变量")
-        
-        try:
-            httpx.URL(self.base_url)
-        except Exception as e:
-            errors.append(f"无效的base_url: {str(e)}")
-            
-        if self.temperature < 0 or self.temperature > 2:
-            errors.append("temperature必须在0~2之间")
-            
-        if errors:
-            raise ConfigurationError("\n".join(errors))
+from ai_common import ModelConfig, AIError, ValidationError, ConfigurationError, T, logger
 
 def load_model_config(provider: str = None, config_dir: str = None) -> ModelConfig:
     """加载指定供应商的模型配置

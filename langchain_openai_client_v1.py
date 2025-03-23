@@ -13,7 +13,7 @@ from langchain_core.chat_history import (
 )
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
-from cosmic_ai_cline import load_model_config, ModelConfig, ConfigurationError
+from ai_common import ModelConfig
 
 logger = logging.getLogger(__name__)
 T = TypeVar('T')
