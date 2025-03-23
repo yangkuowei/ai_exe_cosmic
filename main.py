@@ -9,7 +9,7 @@ import argparse
 from dataclasses import dataclass
 
 from cosmic_ai_cline import load_model_config
-from cosmic_ai_cline import call_ai
+from langchain_openai_client_v1 import call_ai
 
 from read_file_content import (
     read_file_content,
@@ -174,7 +174,7 @@ def generate_trigger_events(
         requirement_content=requirement,
         extractor=extract_json_from_text,
         validator=validator,
-        max_chat_cout= 5,
+        max_chat_count= 5,
         config=load_model_config()
     )
 
