@@ -64,11 +64,12 @@ def validate_cosmic_table(markdown_table_str: str,request_name: str) -> Tuple[bo
 
         # 2. 功能过程 - 避免开发术语，不包含“校验”
         if "校验" in process:
-            errors.append(f"第{row_num}行：功能过程 '{process}' 不能包含 '校验'。")
+            errors.append(f"第{row_num}行：功能过程 '{process}' 禁止包含 '校验'，请替换表达词语。")
 
         # 3. 子过程描述规则
         if "校验" in sub_process:
-            errors.append(f"第{row_num}行：子过程描述 '{sub_process}' 不能包含 '校验'。")
+            #errors.append(f"第{row_num}行：子过程描述 '{sub_process}' 禁止包含 '校验'，请替换表达词语。")
+            pass
         if sub_process == process:
             errors.append(f"第{row_num}行：子过程描述 '{sub_process}' 不能与功能过程描述相同。")
 
@@ -121,6 +122,17 @@ def validate_cosmic_table(markdown_table_str: str,request_name: str) -> Tuple[bo
         if moves[0] != "E" or moves[-1] not in ("W", "X"):
             errors.append(f"功能过程 '{process}' 的数据移动类型不符合要求（应以E开头，W/X结尾）。")
             continue  # 继续检查下一个功能过程
+
+        WX = ''
+        for move in moves:
+            if move == "W":
+                WX += 'W'
+            if move == 'X':
+                WX += 'X'
+            else:
+                WX = ''
+            if WX == 'WX':
+                errors.append(f"功能过程 '{process}' 的数据移动类型不能是WX结构。")
 
         # 检查查询类功能是否为ERX结构
         if len(moves) == 3 and moves == ["E", "R", "X"]:
@@ -276,9 +288,9 @@ def validate_trigger_event_json(json_str, total_rows) -> Tuple[bool, str]:
                 continue  # 如果缺少关键键，跳过当前需求，继续检查下一个
 
             # 新增校验 1: requirement 长度校验
-            if len(req["requirement"]) > 35:
+            if len(req["requirement"]) > 40:
                 errors.append(
-                    f"功能用户需求[{req['requirement']}]名称长度不能超过35，请概况总结")
+                    f"功能用户需求[{req['requirement']}]名称长度不能超过40，请概况总结")
 
             if not isinstance(req["trigger_events"], list):
                 errors.append(
@@ -308,9 +320,9 @@ def validate_trigger_event_json(json_str, total_rows) -> Tuple[bool, str]:
                     continue
 
                 # 3. 数量和关系校验
-                if not (2 <= len(event["functional_processes"]) <= 5):
+                if not (1 < len(event["functional_processes"]) < 6):
                     errors.append(
-                        f"数量校验错误：'functional_user_requirements'[{req_index}]['trigger_events'][{event_index}]['functional_processes'] 应该包含 2 到 5 个元素。")
+                        f"数量校验错误：'functional_user_requirements'[{req_index}]['trigger_events'][{event_index}]['functional_processes'] 应该包含 1 到 6 个元素。一个触发事件一般对应1到6个功能过程")
 
         # 4. 触发事件数量校验 (至少一个)
         all_trigger_events = [event for req in data["functional_user_requirements"] for event in req["trigger_events"]]
@@ -319,11 +331,11 @@ def validate_trigger_event_json(json_str, total_rows) -> Tuple[bool, str]:
 
         # 5. 功能过程总数校验 (根据总行数计算范围)
         total_processes = sum(len(event["functional_processes"]) for event in all_trigger_events)
-        lower_bound = total_rows // 5
-        upper_bound = total_rows // 2
+        lower_bound = total_rows // 3.3
+        upper_bound = total_rows // 2.5
+        m_bound = total_rows // 3
         if not (lower_bound <= total_processes <= upper_bound):
-            errors.append(
-                f"数量校验错误：功能过程的总数应在 {lower_bound} 到 {upper_bound} 之间（基于总行数 {total_rows}）。")
+            errors.append(f"数量校验错误：功能过程的总数应在 {m_bound} 个左右（基于总行数 {total_rows}）。")
 
         # 6. 触发事件和功能过程的描述格式校验 (仅当 all_trigger_events 不为空时)
         if all_trigger_events:
@@ -335,7 +347,7 @@ def validate_trigger_event_json(json_str, total_rows) -> Tuple[bool, str]:
 
                 for process in event["functional_processes"]:
                     if "校验" in process:
-                        errors.append(f"格式校验错误：功能过程描述 '{process}' 包含 '校验'。")
+                        errors.append(f"格式校验错误：功能过程描述 '{process}' 禁止包含 '校验'，请替换表达词语。")
 
         # 7. 功能过程判重
         all_processes = []

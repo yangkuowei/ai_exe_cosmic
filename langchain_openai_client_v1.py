@@ -91,11 +91,12 @@ class LangChainCosmicTableGenerator:
             max_iterations: int = 3
     ) -> str:
 
+        cosmic_ai_promote = cosmic_ai_promote.replace("{", "\{").replace("}", "\}")
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
-                    "{cosmic_ai_promote}.",
+                    cosmic_ai_promote,
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
@@ -103,11 +104,9 @@ class LangChainCosmicTableGenerator:
 
         chain = prompt | self.chat
 
-        with_message_history = RunnableWithMessageHistory(
-            chain,
-            get_session_history,
-            input_messages_key="messages",
-        )
+        with_message_history = RunnableWithMessageHistory(chain, get_session_history)
+
+
         config = {"configurable": {"session_id": "abcd"}}
 
         conversation_idx = 0
@@ -127,22 +126,23 @@ class LangChainCosmicTableGenerator:
             self.chat.callbacks = [StreamCallback()]
 
             response = with_message_history.invoke(
-                {"messages": [HumanMessage(content=user_centent)], "cosmic_ai_promote": cosmic_ai_promote},
+                [HumanMessage(content=user_centent)],
                 config=config,
             )
-
             answer_content = ''.join(answer_content)
 
             extracted_data = extractor(answer_content)
             is_valid, error = validator(extracted_data)
 
-            if is_valid or conversation_idx > max_iterations:
+            if is_valid:
                 print("校验通过")
                 return extracted_data
+            if conversation_idx > max_iterations:
+                print("超过最大对话次数AI仍然未生成符合校验的内容，强制返回")
+                return extracted_data
 
-            print(f"校验失败：{error}")
-
-            user_centent = f"校验失败：{error}"
+            user_centent = f"生成内容校验未通过: {error}\n**请严格按照cosmic编写规范重新输出完整内容**"
+            print(user_centent)
 
 
 def call_ai(

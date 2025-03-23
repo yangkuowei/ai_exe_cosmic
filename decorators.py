@@ -5,7 +5,7 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-def ai_processor(max_retries: int = 3, initial_delay: float = 1.0, max_delay: float = 10.0):
+def ai_processor(max_retries: int = 3, initial_delay: float = 10.0, max_delay: float = 10.0):
     """AI处理核心装饰器，集成重试、退避、日志和性能监控
     
     Args:
@@ -26,7 +26,7 @@ def ai_processor(max_retries: int = 3, initial_delay: float = 1.0, max_delay: fl
                     result = func(*args, **kwargs)
                     elapsed = time.monotonic() - start_time
                     
-                    logger.info(f"Successfully processed {func.__name__} in {elapsed:.2f}s")
+                    logger.info(f"成功处理 {func.__name__}，耗时 {elapsed:.2f}秒")
                     return result
                 except Exception as e:
                     last_error = e
@@ -34,9 +34,9 @@ def ai_processor(max_retries: int = 3, initial_delay: float = 1.0, max_delay: fl
                     
                     # 流式回调通知
                     if stream_callback:
-                        stream_callback(f"\n⚠️ Attempt {attempt} failed ({error_type}), retrying...\n")
+                        stream_callback(f"\n⚠️ 第{attempt}次尝试失败（{error_type}），正在重试...\n") 
                     
-                    logger.warning(f"Attempt {attempt}/{max_retries} failed: {str(e)}")
+                    logger.warning(f"第{attempt}/{max_retries}次尝试失败：{str(e)}")
                     
                     if attempt < max_retries:
                         # 指数退避算法
@@ -44,7 +44,7 @@ def ai_processor(max_retries: int = 3, initial_delay: float = 1.0, max_delay: fl
                         time.sleep(sleep_time)
                         current_delay *= 1.5
             # 所有重试失败后处理
-            error_msg = f"Failed after {max_retries} attempts. Last error: {str(last_error)}"
+            error_msg = f"所有{max_retries}次尝试均失败，最后错误：{str(last_error)}"
             logger.error(error_msg)
             if stream_callback:
                 stream_callback(f"\n❌ {error_msg}\n")

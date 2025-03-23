@@ -8,7 +8,7 @@ import logging
 import argparse
 from dataclasses import dataclass
 
-from cosmic_ai_cline import call_ai, load_model_config
+from langchain_openai_client_v1 import call_ai
 
 from read_file_content import (
     read_file_content,
@@ -177,6 +177,7 @@ def generate_trigger_events(
         requirement_content=requirement,
         extractor=extract_json_from_text,
         validator=validator,
+        max_retries = 5,
         config=load_model_config(),
         stream_callback=stream_callback
     )
@@ -264,6 +265,7 @@ def generate_cosmic_table(
                 min_rows = total_processes * 3
                 max_rows = total_processes * 4
                 row_range = f"{min_rows}~{max_rows}"
+                row_range = min_rows
 
                 # 更新基础内容中的行数要求
                 content_lines = base_content.splitlines()
@@ -280,7 +282,7 @@ def generate_cosmic_table(
                 updated_content = '\n'.join(content_lines)
 
                 # 生成分批内容
-                combined_content = f"{updated_content}\n触发事件与功能过程列表：\n{json.dumps(batch_json, ensure_ascii=False)}"
+                combined_content = f"{updated_content}\n按照以下触发事件与功能过程列表生成符合规范的cosmic表格：\n{json.dumps(batch_json, ensure_ascii=False)}"
 
                 # 调用AI生成表格
                 validator = partial(validate_cosmic_table, request_name=request_name)

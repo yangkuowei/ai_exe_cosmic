@@ -135,7 +135,7 @@ def load_model_config(provider: str = None, config_dir: str = None) -> ModelConf
             api_key=api_key,
             temperature=provider_config.get('temperature', 0.9),
             max_tokens=provider_config.get('max_tokens', 8192),
-            timeout=provider_config.get('timeout', 30.0),
+            timeout=provider_config.get('timeout', 60.0),
             max_retries=provider_config.get('max_retries', 3)
         )
         
@@ -234,7 +234,7 @@ def call_ai(
                 return extracted_data
                 
             logger.warning(f"校验未通过: {error_msg}")
-            messages.append({"role": "user", "content": f"校验错误: {error_msg}"})
+            messages.append({"role": "user", "content": f"生成内容校验未通过: {error_msg}\n**请严格按照cosmic编写规范重新输出完整内容**"})
             last_error = ValidationError(f"验证失败: {error_msg}", max_retries=max_retries)
 
             if attempt >= max_retries:
@@ -320,36 +320,3 @@ def validate_json_schema(data: dict) -> Tuple[bool, str]:
     if 'required_field' in data:
         return True, ""
     return False, "缺少required_field字段"
-
-def main():
-    """使用示例"""
-    try:
-        config = load_model_config()
-        
-        def stream_callback(content: str):
-            """流式响应回调示例"""
-            print(content, end='', flush=True)
-            
-        result = call_ai(
-            ai_prompt="你是一个JSON生成助手",
-            requirement_content="生成包含required_field字段的JSON",
-            extractor=extract_json_from_text,
-            validator=validate_json_schema,
-            config=config,
-            max_retries=3,
-            stream_callback=stream_callback
-        )
-        
-        print(f"\n最终结果: {result}")
-        
-    except ValidationError as ve:
-        print(f"验证失败: {ve}")
-    except APIConnectionError as ace:
-        print(f"连接错误: {ace}")
-    except ConfigurationError as ce:
-        print(f"配置错误: {ce}")
-    except AIError as ae:
-        print(f"AI处理错误: {ae}")
-
-if __name__ == "__main__":
-    main()

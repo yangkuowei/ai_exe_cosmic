@@ -1,10 +1,10 @@
 # 默认使用的模型提供商（可选）
-default_provider: aliyun
+default_provider: deepseek
 
 providers:
   302:
     base_url: https://api.302.ai/v1/chat/completions
-    model_name: gemini-2.0-pro-exp-02-05
+    model_name: gemini-2.0-flash-thinking-exp-01-21
     env_mapping:
       api_key: API_302_KEY
       base_url: API_302_BASE_URL
@@ -36,8 +36,15 @@ providers:
 
   lmstudio:
     base_url: http://127.0.0.1:1234/v1
-    model_name: qwen2.5-32b-instruct
+    model_name: deepseek-r1-distill-qwen-32b
     env_mapping:
-      api_key: LMSTUDIO_API_KEY
+      api_key: NVIDIA_API_KEY
       base_url: LMSTUDIO_BASE_URL
       model_name: LMSTUDIO_MODEL
+  hunyuan:
+    base_url: https://api.hunyuan.cloud.tencent.com/v1
+    model_name: hunyuan-t1-latest
+    env_mapping:
+      api_key: HUNYUAN_API_KEY
+      base_url: HUNYUAN_BASE_URL
+      model_name: HUNYUAN_MODEL
