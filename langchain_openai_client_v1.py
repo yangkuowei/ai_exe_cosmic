@@ -159,7 +159,7 @@ class LangChainCosmicTableGenerator:
         """构建重试提示模板"""
         return f"""\n上次生成内容未通过验证：{error}
 请根据以下要求重新生成：
-1. 严格遵循COSMIC规范
+1. 严格遵循COSMIC规范，使用markdown语法输出
 2. 确保数据结构完整
 3. 检查所有必填字段
 4. 保持输出格式一致性"""
@@ -170,7 +170,7 @@ def call_ai(
         extractor: Callable[[str], Any],
         validator: Callable[[Any], Tuple[bool, str]],
         config: ModelConfig,
-        max_chat_count: int = 3
+        max_chat_count: int = 5
 ) -> str:
     """调用AI生成表格的统一入口
     

@@ -1,5 +1,5 @@
 # 默认使用的模型提供商（可选）
-default_provider: deepseek
+default_provider: nvidia
 
 providers:
   302:
@@ -12,7 +12,7 @@ providers:
 
   deepseek:
     base_url: https://api.deepseek.com/v1
-    model_name: deepseek-reasoner
+    model_name: deepseek-chat
     env_mapping:
       api_key: DEEP_SEEK_API_KEY
       base_url: DEEPSEEK_BASE_URL
@@ -20,7 +20,7 @@ providers:
 
   aliyun:
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    model_name: qwq-plus
+    model_name: qwq-32b
     env_mapping:
       api_key: DASHSCOPE_API_KEY
       base_url: ALIYUN_BASE_URL
@@ -51,6 +51,13 @@ providers:
   siliconflow:
     base_url: https://api.siliconflow.cn/v1/
     model_name: Qwen/Qwen2.5-Coder-32B-Instruct
+    env_mapping:
+      api_key: SILICONFLOW_API_KEY
+      base_url: SILICONFLOW_BASE_URL
+      model_name: SILICONFLOW_MODEL
+  vllm:
+    base_url: http://localhost:8080/v1/
+    model_name: QwQ-32B-AWQ
     env_mapping:
       api_key: SILICONFLOW_API_KEY
       base_url: SILICONFLOW_BASE_URL

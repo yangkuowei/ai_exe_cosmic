@@ -6,18 +6,23 @@ from typing import List, Dict, Tuple, Set
 
 
 # 校验、文本内容提取相关
-def validate_cosmic_table(markdown_table_str: str,request_name: str) -> Tuple[bool, str]:
+import re
+from typing import List, Dict, Tuple, Set
+from typing import Tuple
+# 假设 markdown_table_to_list 函数已经定义
+
+def validate_cosmic_table(markdown_table_str: str, request_name: str) -> Tuple[bool, str]:
     """
     校验COSMIC功能点度量表格。
 
     参数：
     markdown_table_str (str): Markdown格式的表格字符串。
+    request_name (str): 客户需求名称。
 
     返回值：
     tuple: (bool, str)，第一个元素表示校验是否通过，
            第二个元素是错误信息字符串（如果校验不通过, 多个错误用换行符分隔）。
     """
-
 
     try:
         table = markdown_table_to_list(markdown_table_str)
@@ -123,16 +128,9 @@ def validate_cosmic_table(markdown_table_str: str,request_name: str) -> Tuple[bo
             errors.append(f"功能过程 '{process}' 的数据移动类型不符合要求（应以E开头，W/X结尾）。")
             continue  # 继续检查下一个功能过程
 
-        WX = ''
-        for move in moves:
-            if move == "W":
-                WX += 'W'
-            if move == 'X':
-                WX += 'X'
-            else:
-                WX = ''
-            if WX == 'WX':
-                errors.append(f"功能过程 '{process}' 的数据移动类型不能是WX结构。")
+        # 检查是否为 WX 结构
+        if moves == ["E","W", "X"]:
+            errors.append(f"功能过程 '{process}' 的数据移动类型不能是 WX 结构。")
 
         # 检查查询类功能是否为ERX结构
         if len(moves) == 3 and moves == ["E", "R", "X"]:

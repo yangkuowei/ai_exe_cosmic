@@ -233,26 +233,35 @@ def generate_cosmic_table(
 
         # 遍历每个需求
         for req in cosmic_data["functional_user_requirements"]:
-            req_events = req["trigger_events"]
             requirement_name = req["requirement"]
+            req_events = req["trigger_events"]
 
-            # 按需求内的触发事件分批
-            for i in range(0, len(req_events), batch_size):
-                batch_events = req_events[i:i + batch_size]
+            # 改为逐个处理触发事件
+            for event in req_events:
+                temp_filename = f"{request_file.stem}_event{batch_num}.md"
+                temp_path = temp_dir / temp_filename
 
-                # 构建单个需求的批次JSON
-                batch_json = {
+                batch_num += 1
+
+                # 检查文件是否已存在
+                if temp_path.exists():
+                    print(f"文件 {temp_filename} 已存在，跳过处理")
+                    temp_files.append(temp_path)  # 仍然添加到结果列表中
+                    continue
+
+                # 构建单个触发事件的JSON
+                event_json = {
                     "functional_user_requirements": [{
                         "requirement": requirement_name,
-                        "trigger_events": batch_events
+                        "trigger_events": [event]  # 注意这里是一个包含单个事件的数组
                     }]
                 }
 
-                # 计算本批次功能过程数量
+                # 计算本事件的功能过程数量
                 total_processes = sum(
-                    len(event["functional_processes"])
-                    for req in batch_json["functional_user_requirements"]
-                    for event in req["trigger_events"]
+                    len(e["functional_processes"])
+                    for req in event_json["functional_user_requirements"]
+                    for e in req["trigger_events"]
                 )
 
                 # 生成动态行数范围
@@ -276,7 +285,7 @@ def generate_cosmic_table(
                 updated_content = '\n'.join(content_lines)
 
                 # 生成分批内容
-                combined_content = f"{updated_content}\n按照以下触发事件与功能过程列表生成符合规范的cosmic表格：\n{json.dumps(batch_json, ensure_ascii=False)}"
+                combined_content = f"{updated_content}\n结合需求背景、详细方案设计按照以下触发事件与功能过程列表生成符合规范的cosmic表格：\n{json.dumps(event_json, ensure_ascii=False, indent=2)}"
 
                 # 调用AI生成表格
                 validator = partial(validate_cosmic_table, request_name=request_name)
@@ -289,8 +298,6 @@ def generate_cosmic_table(
                 )
 
                 # 保存临时文件
-                temp_filename = f"{request_file.stem}_batch{batch_num}.md"
-                temp_path = temp_dir / temp_filename
                 save_content_to_file(
                     file_name=temp_filename,
                     output_dir=str(temp_dir),
@@ -299,7 +306,7 @@ def generate_cosmic_table(
                 )
 
                 temp_files.append(temp_path)
-                batch_num += 1
+                #batch_num += 1
 
         # 合并临时文件
         full_table = merge_temp_files(temp_files)
