@@ -1,5 +1,5 @@
 # 默认使用的模型提供商（可选）
-default_provider: nvidia
+default_provider: deepseek
 
 providers:
   302:
@@ -12,7 +12,7 @@ providers:
 
   deepseek:
     base_url: https://api.deepseek.com/v1
-    model_name: deepseek-chat
+    model_name: deepseek-reasoner
     env_mapping:
       api_key: DEEP_SEEK_API_KEY
       base_url: DEEPSEEK_BASE_URL
@@ -36,7 +36,7 @@ providers:
 
   lmstudio:
     base_url: http://127.0.0.1:1234/v1
-    model_name: deepseek-r1-distill-qwen-32b
+    model_name: qwq-32b@q8_0
     env_mapping:
       api_key: NVIDIA_API_KEY
       base_url: LMSTUDIO_BASE_URL
