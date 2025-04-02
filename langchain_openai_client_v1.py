@@ -1,9 +1,11 @@
 import os
+import threading
 import logging
 import logging.handlers
 import queue
-from typing import Callable, Tuple, Any, Dict, List, Optional, TypeVar
+from typing import Callable, Tuple, Any, Dict, List, Optional, TypeVar, Awaitable
 from threading import Lock
+import asyncio
 
 # 配置线程安全的日志
 logger = logging.getLogger(__name__)
@@ -80,7 +82,7 @@ class LangChainCosmicTableGenerator:
         if config.max_tokens < 100:
             logger.warning("max_tokens值(%d)可能过小", config.max_tokens)
 
-    def generate_table(
+    async def generate_table_async(
             self,
             cosmic_ai_prompt: str,
             requirement_content: str,
@@ -121,19 +123,26 @@ class LangChainCosmicTableGenerator:
         answer_buffer: List[str] = []
         #self.chat.callbacks = [self._create_stream_callback(answer_buffer)]
 
+        logger.info(f"开始调用AI模型 (线程ID: {threading.get_ident()})")
+        #logger.debug(f"请求参数摘要:\n提示模板: {cosmic_ai_prompt[:100]}...\n需求内容: {requirement_content[:200]}...")
+        
         for attempt in range(max_chat_count + 1):
             try:
-                response = with_message_history.invoke(
+                logger.info(f"第 {attempt + 1}/{max_chat_count + 1} 次尝试")
+                response = await with_message_history.ainvoke(
                     [HumanMessage(content=requirement_content)],
                     config=config,
                 )
+                logger.info("收到AI响应 (长度: %d 字符)", len(response.content))
+                logger.debug("响应内容摘要: %s", response.content)
                 
-                full_answer = ''.join(answer_buffer)
+                full_answer = response.content
                 extracted_data = extractor(full_answer)
                 is_valid, error = validator(extracted_data)
 
                 if is_valid:
-                    logger.info(f"\n校验通过")
+                    logger.info(f"校验通过 (线程ID: {threading.get_ident()})")
+                    logger.debug("最终结果: %s", str(extracted_data)[:500])
                     return extracted_data
                     
                 if attempt == max_chat_count:
@@ -141,8 +150,8 @@ class LangChainCosmicTableGenerator:
                     raise ValueError(f"验证失败：{error}")
 
                 requirement_content = self._build_retry_prompt(error)
-                logger.info(requirement_content)
-                logger.info("第%d次重试，更新请求内容", attempt+1)
+                logger.warning("验证未通过: %s", error)
+                #logger.info("更新请求内容准备重试:\n%s", requirement_content[:300])
 
             except Exception as e:
                 logger.error("生成过程中发生异常：%s", str(e))
@@ -171,7 +180,7 @@ class LangChainCosmicTableGenerator:
 3. 检查所有必填字段
 4. 保持输出格式一致性"""
 
-def call_ai(
+async def call_ai_async(
         ai_prompt: str,
         requirement_content: str,
         extractor: Callable[[str], Any],
@@ -193,7 +202,7 @@ def call_ai(
         经过验证的最终结果
     """
     generator = LangChainCosmicTableGenerator(config=config)
-    return generator.generate_table(
+    return await generator.generate_table_async(
         ai_prompt,
         requirement_content,
         extractor,

@@ -10,9 +10,10 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from queue import Queue
+import asyncio
 
 from ai_common import load_model_config
-from langchain_openai_client_v1 import call_ai
+from langchain_openai_client_v1 import call_ai_async
 
 from read_file_content import (
     read_file_content,
@@ -61,7 +62,7 @@ def load_prompt_template(template_path: Path) -> str:
         raise RuntimeError(f"Prompt template loading failed: {e}") from e
 
 
-def main() -> None:
+async def main() -> None:
     """主业务流程（支持分阶段执行）
     
     命令行参数:
@@ -79,8 +80,6 @@ def main() -> None:
         config = ProjectPaths()
 
         # 读取需求文件（自动获取最新或通过参数指定）
-
-        # 使用pathlib优化路径操作
         txt_files = sorted(
             config.requirements.glob("*.txt"),
             key=lambda f: f.stat().st_mtime,
@@ -116,10 +115,10 @@ def main() -> None:
         run_stage1 = args.stage1 or not args.stage2
         run_stage2 = args.stage2 or not args.stage1
 
-        run_stage1 = False
+        #run_stage1 = False
         if run_stage1:
             # 阶段1：生成触发事件JSON
-            json_str = generate_trigger_events(
+            json_str = await generate_trigger_events(
                 prompt=load_prompt_template(config.trigger_events_template),
                 requirement=requirement_content,
                 total_rows=total_rows,
@@ -136,7 +135,7 @@ def main() -> None:
 
         if run_stage2:
             # 阶段2：生成COSMIC表格
-            generate_cosmic_table(
+            await generate_cosmic_table(
                 prompt=load_prompt_template(config.cosmic_table_template),
                 base_content=requirement_content,
                 json_data=json_str,
@@ -160,7 +159,7 @@ from decorators import ai_processor
 
 
 @ai_processor(max_retries=3)
-def generate_trigger_events(
+async def generate_trigger_events(
         prompt: str,
         requirement: str,
         total_rows: int,
@@ -172,7 +171,7 @@ def generate_trigger_events(
 
     validator = partial(validate_trigger_event_json, total_rows=total_rows)
 
-    json_data = call_ai(
+    json_data = await call_ai_async(
         ai_prompt=prompt,
         requirement_content=requirement,
         extractor=extract_json_from_text,
@@ -194,7 +193,7 @@ def generate_trigger_events(
 
 
 @ai_processor(max_retries=3)
-def generate_cosmic_table(
+async def generate_cosmic_table(
         prompt: str,
         base_content: str,
         json_data: str,
@@ -202,7 +201,7 @@ def generate_cosmic_table(
         request_file: Path,
         request_name: str,
         batch_size: int = 5,  # 保留参数但不再使用
-        max_workers: int = 10,  # 限制并发数避免API限流
+        max_workers: int = 20,  # 限制并发数避免API限流
 ) -> None:
     """生成COSMIC表格（支持多线程并行处理）
     
@@ -225,7 +224,6 @@ def generate_cosmic_table(
     logger.info("开始生成COSMIC表格...")
 
     try:
-
         # 解析原始JSON数据
         cosmic_data = json.loads(json_data)
         # 创建临时目录
@@ -245,8 +243,8 @@ def generate_cosmic_table(
                 for event in req["trigger_events"]
             ])
 
-        def process_event(event_req_tuple, batch_num, temp_dir, request_file, base_content, prompt, request_name):
-            """处理单个触发事件的线程函数"""
+        async def process_event(event_req_tuple, batch_num, temp_dir, request_file, base_content, prompt, request_name):
+            """处理单个触发事件的协程"""
             event, req_name = event_req_tuple
             try:
                 temp_filename = f"{request_file.stem}_event{batch_num}.md"
@@ -292,9 +290,9 @@ def generate_cosmic_table(
                 # 生成分批内容
                 combined_content = f"{updated_content}\n结合需求背景、详细方案设计按照以下触发事件与功能过程列表生成符合规范的cosmic表格：\n{json.dumps(event_json, ensure_ascii=False, indent=2)}"
 
-                # 调用AI生成表格
+                # 调用AI生成表格(异步)
                 validator = partial(validate_cosmic_table, request_name=request_name)
-                markdown_table = call_ai(
+                markdown_table = await call_ai_async(
                     ai_prompt=prompt,
                     requirement_content=combined_content,
                     extractor=extract_table_from_text,
@@ -315,33 +313,30 @@ def generate_cosmic_table(
                 logger.error(f"处理事件{batch_num}失败: {str(e)}")
                 return None
 
-        # 使用线程池并行处理所有事件
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
-            for i, event_req in enumerate(all_events):
-                if i > 0:  # 第一个任务立即执行，后续任务延迟
-                    import time
-                    time.sleep(10)  # 10秒间隔
-                future = executor.submit(
-                    process_event,
-                    event_req_tuple=event_req,
-                    batch_num=batch_num + i,
-                    temp_dir=temp_dir,
-                    request_file=request_file,
-                    base_content=base_content,
-                    prompt=prompt,
-                    request_name=request_name
-                )
-                futures.append(future)
+        # 直接创建协程任务并行处理
+        tasks = []
+        for i, event_req in enumerate(all_events):
+            if i > 0:  # 第一个任务立即执行，后续任务延迟
+                await asyncio.sleep(1)  # 5秒间隔
+            
+            task = process_event(
+                event_req_tuple=event_req,
+                batch_num=batch_num + i,
+                temp_dir=temp_dir,
+                request_file=request_file,
+                base_content=base_content,
+                prompt=prompt,
+                request_name=request_name
+            )
+            tasks.append(task)
 
-            # 收集所有处理结果
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    if result:
-                        temp_files.append(result)
-                except Exception as e:
-                    logger.error(f"处理事件失败: {str(e)}")
+        # 等待所有任务完成
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # 收集成功结果
+        for result in results:
+            if not isinstance(result, Exception) and result:
+                temp_files.append(result)
 
         # 合并临时文件
         full_table = merge_temp_files(temp_files)
@@ -371,7 +366,6 @@ def generate_cosmic_table(
         )
 
         # 生成Excel和Word
-        # processed_table = process_markdown_table(full_table)
         for file_type in ["xlsx", "docx"]:
             save_content_to_file(
                 file_name=request_file.name,
@@ -391,6 +385,6 @@ def generate_cosmic_table(
 
 if __name__ == "__main__":
     try:
-        main()
+        asyncio.run(main())
     finally:
         exit(1)
