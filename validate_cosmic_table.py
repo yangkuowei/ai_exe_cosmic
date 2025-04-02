@@ -2,8 +2,7 @@ import re
 import json
 
 import markdown
-from typing import List, Dict, Tuple, Set
-
+from typing import List, Dict, Tuple, Set, Optional, Any, Union
 
 # 校验、文本内容提取相关
 import re
@@ -170,14 +169,29 @@ def validate_cosmic_table(markdown_table_str: str, request_name: str) -> Tuple[b
 def markdown_table_to_list(markdown_table_str):
     """
     将Markdown表格字符串转换为Python列表。
+    如果输入字符串包含 ```markdown ... ``` 标记，会先提取其中的内容。
 
     参数：
-    markdown_table_str (str): Markdown表格字符串。
+    markdown_table_str (str): Markdown表格字符串，可以包含代码块标记。
 
     返回值：
-    list of dict: 转换后的Python列表。
+    list of dict: 转换后的Python列表，如果无法解析则返回空列表。
     """
-    html = markdown.markdown(markdown_table_str, extensions=['tables'])
+    # 预处理：移除可选的 ```markdown ... ``` 包围符
+    # 匹配 ```markdown 开头 (忽略前后空格和换行) 和 ``` 结尾
+    # 并提取中间的内容
+    match = re.search(r"^\s*```(?:markdown)?\s*\n?(.*?)\n?\s*```\s*$", markdown_table_str, re.DOTALL | re.IGNORECASE)
+    if match:
+        markdown_content = match.group(1).strip() # 提取括号里的内容并去除首尾空格
+    else:
+        # 如果没有匹配到代码块标记，假定整个输入就是Markdown内容
+        markdown_content = markdown_table_str.strip()
+
+    if not markdown_content: # 如果提取后内容为空，则直接返回
+        return []
+
+    # 将Markdown转换为HTML (只转换提取出的内容)
+    html = markdown.markdown(markdown_content, extensions=['tables'])
     # 使用正则表达式提取表格内容
     table_match = re.search(r'<table>(.*?)</table>', html, re.DOTALL)
     if not table_match:
@@ -360,3 +374,218 @@ def validate_trigger_event_json(json_str, total_rows) -> Tuple[bool, str]:
     # 返回校验结果和错误信息
 
     return not errors, "\n".join(errors)
+
+
+
+# --- 配置和常量 ---
+
+# 允许的功能用户枚举值 (值必须是中文)
+ALLOWED_FUNCTIONAL_USERS = {
+    "操作员",
+    "个人网台",
+    "订单中心",
+    "账管中心",
+    "基础中心",
+    "产商品中心",
+    "后台进程",
+}
+
+# 预期的顶层键
+EXPECTED_TOP_LEVEL_KEYS = {
+    "customerRequirement",
+    "requirementBackground",
+    "functionalPoints",
+}
+
+# 预期的功能点内键
+EXPECTED_FUNCTIONAL_POINT_KEYS = {
+    "functionalUser",
+    "requirementDescription",
+    "detailedSolution",
+    "workloadPercentage",
+}
+
+# 预期的功能用户键
+EXPECTED_FUNCTIONAL_USER_KEYS = {"initiator", "receiver"}
+
+# 禁止的键
+FORBIDDEN_KEYS_IN_FUNCTIONAL_POINT = {"processingLogic"}
+
+# --- 辅助函数 ---
+
+def is_primarily_chinese(text: str) -> bool:
+    """
+    检查字符串是否主要包含中文字符。
+    一个简单的检查，判断是否存在至少一个 CJK 统一表意文字。
+    """
+    if not isinstance(text, str) or not text.strip():
+        return False # 空字符串或非字符串不视作中文
+    # CJK Unified Ideographs (基本常用汉字范围)
+    return bool(re.search(r'[\u4e00-\u9fff]', text))
+
+def validate_structure_and_types(data: Any, errors: List[str]) -> bool:
+    """校验顶层结构和基本类型"""
+    if not isinstance(data, dict):
+        errors.append("顶层必须是一个 JSON 对象 (字典)")
+        return False
+
+    # 检查顶层键是否存在
+    missing_top_keys = EXPECTED_TOP_LEVEL_KEYS - data.keys()
+    if missing_top_keys:
+        errors.append(f"顶层缺少必需的键: {', '.join(missing_top_keys)}")
+
+    # 检查多余的顶层键
+    extra_top_keys = data.keys() - EXPECTED_TOP_LEVEL_KEYS
+    if extra_top_keys:
+        errors.append(f"顶层包含不允许的键: {', '.join(extra_top_keys)}")
+
+    # 检查类型和中文值
+    if "customerRequirement" in data:
+        if not isinstance(data["customerRequirement"], str):
+            errors.append("customerRequirement 的值必须是字符串")
+        elif not is_primarily_chinese(data["customerRequirement"]):
+             errors.append("customerRequirement 的值必须是中文")
+
+    if "requirementBackground" in data:
+        if not isinstance(data["requirementBackground"], str):
+            errors.append("requirementBackground 的值必须是字符串")
+        elif not is_primarily_chinese(data["requirementBackground"]):
+             errors.append("requirementBackground 的值必须是中文")
+
+    if "functionalPoints" in data and not isinstance(data["functionalPoints"], list):
+        errors.append("functionalPoints 的值必须是一个数组 (列表)")
+
+    # 返回是否有结构性错误（不包括类型/值错误，那些继续检查）
+    return not bool(missing_top_keys or extra_top_keys)
+
+
+# --- 主要校验函数 ---
+
+def validate_requirement_json(json_str: str) -> Tuple[bool, str]:
+    """
+    校验软件需求 JSON 字符串是否符合预定义规则。
+
+    Args:
+        json_str: 包含 JSON 数据的字符串。
+
+    Returns:
+        一个元组 (is_valid, error_message)，其中 is_valid 是布尔值，
+        error_message 是包含所有校验错误的单个字符串（错误间用换行符分隔），
+        如果 JSON 有效，则 error_message 为空字符串。
+    """
+    errors: List[str] = []
+    data: Optional[Dict[str, Any]] = None
+
+    # 1. 解析 JSON 字符串
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        errors.append(f"JSON 解析失败: {e}")
+        return False, "\n".join(errors)
+    except Exception as e:
+        errors.append(f"解析 JSON 时发生意外错误: {e}")
+        return False, "\n".join(errors)
+
+    if data is None: # 理论上 json.loads 成功就不会是 None，但作为防御性检查
+         errors.append("未能成功解析数据")
+         return False, "\n".join(errors)
+
+    # 2. 校验顶层结构和类型
+    validate_structure_and_types(data, errors) # 收集结构和顶层类型错误
+
+    # 3. 校验 functionalPoints 列表 (即使顶层结构有误也尝试检查，以收集更多信息)
+    functional_points = data.get("functionalPoints")
+    total_workload = 0
+    if not isinstance(functional_points, list):
+        # 如果 functionalPoints 存在但不是列表，之前已记录错误，此处无需重复
+        # 如果 functionalPoints 不存在，之前已记录错误
+        pass
+    else: # functional_points 是一个列表
+        if not functional_points:
+             errors.append("functionalPoints 列表不能为空")
+
+        for i, fp in enumerate(functional_points):
+            fp_prefix = f"functionalPoints[{i}]"
+
+            if not isinstance(fp, dict):
+                errors.append(f"{fp_prefix}: 每个功能点必须是一个对象 (字典)")
+                continue # 跳过对此项的进一步检查
+
+            # 检查功能点内部的键
+            missing_fp_keys = EXPECTED_FUNCTIONAL_POINT_KEYS - fp.keys()
+            if missing_fp_keys:
+                errors.append(f"{fp_prefix}: 缺少必需的键: {', '.join(missing_fp_keys)}")
+
+            extra_fp_keys = fp.keys() - EXPECTED_FUNCTIONAL_POINT_KEYS
+            if extra_fp_keys:
+                errors.append(f"{fp_prefix}: 包含不允许的键: {', '.join(extra_fp_keys)}")
+
+            # 检查禁止的键
+            forbidden_found = FORBIDDEN_KEYS_IN_FUNCTIONAL_POINT.intersection(fp.keys())
+            if forbidden_found:
+                 errors.append(f"{fp_prefix}: 包含禁止的键: {', '.join(forbidden_found)}")
+
+            # 校验 functionalUser
+            fu = fp.get("functionalUser")
+            if "functionalUser" in fp:
+                if not isinstance(fu, dict):
+                    errors.append(f"{fp_prefix}.functionalUser: 必须是一个对象 (字典)")
+                else:
+                    missing_fu_keys = EXPECTED_FUNCTIONAL_USER_KEYS - fu.keys()
+                    if missing_fu_keys:
+                        errors.append(f"{fp_prefix}.functionalUser: 缺少必需的键: {', '.join(missing_fu_keys)}")
+                    extra_fu_keys = fu.keys() - EXPECTED_FUNCTIONAL_USER_KEYS
+                    if extra_fu_keys:
+                         errors.append(f"{fp_prefix}.functionalUser: 包含不允许的键: {', '.join(extra_fu_keys)}")
+
+                    for user_key in ["initiator", "receiver"]:
+                        user_value = fu.get(user_key)
+                        if user_key in fu:
+                            if not isinstance(user_value, str):
+                                errors.append(f"{fp_prefix}.functionalUser.{user_key}: 值必须是字符串")
+                            elif not user_value:
+                                errors.append(f"{fp_prefix}.functionalUser.{user_key}: 值不能为空字符串")
+                            elif user_value not in ALLOWED_FUNCTIONAL_USERS:
+                                errors.append(f"{fp_prefix}.functionalUser.{user_key}: 值 '{user_value}' 不在允许的枚举列表中: {ALLOWED_FUNCTIONAL_USERS}")
+
+            # 校验 requirementDescription
+            req_desc = fp.get("requirementDescription")
+            if "requirementDescription" in fp:
+                if not isinstance(req_desc, str):
+                    errors.append(f"{fp_prefix}.requirementDescription: 值必须是字符串")
+                elif not is_primarily_chinese(req_desc):
+                     errors.append(f"{fp_prefix}.requirementDescription: 值必须是中文")
+
+            # 校验 detailedSolution
+            det_sol = fp.get("detailedSolution")
+            if "detailedSolution" in fp:
+                if not isinstance(det_sol, list):
+                    errors.append(f"{fp_prefix}.detailedSolution: 值必须是一个数组 (列表)")
+                else:
+                    if not det_sol:
+                        errors.append(f"{fp_prefix}.detailedSolution: 列表不能为空")
+                    for j, sol_item in enumerate(det_sol):
+                        if not isinstance(sol_item, str):
+                            errors.append(f"{fp_prefix}.detailedSolution[{j}]: 列表中的每个元素都必须是字符串")
+                        elif not is_primarily_chinese(sol_item):
+                             errors.append(f"{fp_prefix}.detailedSolution[{j}]: 字符串值必须是中文")
+
+            # 校验 workloadPercentage
+            wp = fp.get("workloadPercentage")
+            if "workloadPercentage" in fp:
+                if not isinstance(wp, int) or isinstance(wp, bool): # bool is subclass of int
+                    errors.append(f"{fp_prefix}.workloadPercentage: 值必须是整数 (非布尔值)")
+                elif not (0 <= wp <= 100):
+                    errors.append(f"{fp_prefix}.workloadPercentage: 值 {wp} 必须在 0 到 100 之间")
+                else:
+                    total_workload += wp
+
+    # 4. 校验总工作量占比 (仅当 functionalPoints 是非空列表时)
+    if isinstance(functional_points, list) and functional_points:
+        if total_workload != 100:
+            errors.append(f"所有 functionalPoints 的 workloadPercentage 总和 ({total_workload}) 不等于 100")
+
+    # 5. 返回结果
+    is_valid = not bool(errors)
+    error_message = "\n".join(errors)
+    return is_valid, error_message

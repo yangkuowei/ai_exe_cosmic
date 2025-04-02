@@ -7,6 +7,9 @@ from pathlib import Path
 import logging
 import argparse
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from queue import Queue
 
 from ai_common import load_model_config
 from langchain_openai_client_v1 import call_ai
@@ -23,12 +26,12 @@ from validate_cosmic_table import (
     validate_trigger_event_json
 )
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# 配置线程安全的日志
+from queue import Queue
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+handler = logging.handlers.QueueHandler(Queue(-1))  # 无界队列
+logger.addHandler(handler)
 
 
 @dataclass
@@ -113,7 +116,7 @@ def main() -> None:
         run_stage1 = args.stage1 or not args.stage2
         run_stage2 = args.stage2 or not args.stage1
 
-        # run_stage1 = False
+        run_stage1 = False
         if run_stage1:
             # 阶段1：生成触发事件JSON
             json_str = generate_trigger_events(
@@ -198,9 +201,10 @@ def generate_cosmic_table(
         output_dir: Path,
         request_file: Path,
         request_name: str,
-        batch_size: int = 5,
+        batch_size: int = 5,  # 保留参数但不再使用
+        max_workers: int = 10,  # 限制并发数避免API限流
 ) -> None:
-    """生成COSMIC表格（支持分批处理及独立执行）
+    """生成COSMIC表格（支持多线程并行处理）
     
     参数:
         prompt: AI提示模板
@@ -208,12 +212,13 @@ def generate_cosmic_table(
         json_data: 触发事件JSON数据（字符串格式）
         output_dir: 输出目录
         request_file: 原始需求文件路径
-        batch_size: 每批处理事件数（默认5）
+        request_name: 需求名称
+        max_workers: 最大线程数（默认10）
         
     执行逻辑:
         1. 检查输入JSON数据有效性
         2. 创建临时目录
-        3. 分批处理并生成中间文件
+        3. 多线程并行处理触发事件
         4. 合并结果并生成最终文件
         5. 保存校验报告
     """
@@ -231,29 +236,32 @@ def generate_cosmic_table(
         batch_num = 1
         temp_files = []
 
-        # 遍历每个需求
+        # 收集所有触发事件
+        all_events = []
         for req in cosmic_data["functional_user_requirements"]:
             requirement_name = req["requirement"]
-            req_events = req["trigger_events"]
+            all_events.extend([
+                (event, requirement_name) 
+                for event in req["trigger_events"]
+            ])
 
-            # 改为逐个处理触发事件
-            for event in req_events:
+        def process_event(event_req_tuple, batch_num, temp_dir, request_file, base_content, prompt, request_name):
+            """处理单个触发事件的线程函数"""
+            event, req_name = event_req_tuple
+            try:
                 temp_filename = f"{request_file.stem}_event{batch_num}.md"
                 temp_path = temp_dir / temp_filename
 
-                batch_num += 1
-
                 # 检查文件是否已存在
                 if temp_path.exists():
-                    print(f"文件 {temp_filename} 已存在，跳过处理")
-                    temp_files.append(temp_path)  # 仍然添加到结果列表中
-                    continue
+                    logger.info(f"文件 {temp_filename} 已存在，跳过处理")
+                    return temp_path
 
                 # 构建单个触发事件的JSON
                 event_json = {
                     "functional_user_requirements": [{
-                        "requirement": requirement_name,
-                        "trigger_events": [event]  # 注意这里是一个包含单个事件的数组
+                        "requirement": req_name,
+                        "trigger_events": [event]
                     }]
                 }
 
@@ -266,15 +274,12 @@ def generate_cosmic_table(
 
                 # 生成动态行数范围
                 min_rows = total_processes * 3
-                max_rows = total_processes * 4
-                row_range = f"{min_rows}~{max_rows}"
                 row_range = min_rows
 
                 # 更新基础内容中的行数要求
                 content_lines = base_content.splitlines()
                 for i in reversed(range(len(content_lines))):
                     if "表格总行数要求：" in content_lines[i]:
-                        # 使用正则表达式替换数字部分
                         content_lines[i] = re.sub(
                             r"(\d+)(行左右)",
                             f"{row_range}行（根据功能过程数量动态计算）",
@@ -294,7 +299,7 @@ def generate_cosmic_table(
                     requirement_content=combined_content,
                     extractor=extract_table_from_text,
                     validator=validator,
-                    config=load_model_config()  # 添加必需的config参数
+                    config=load_model_config()
                 )
 
                 # 保存临时文件
@@ -305,8 +310,38 @@ def generate_cosmic_table(
                     content_type="markdown"
                 )
 
-                temp_files.append(temp_path)
-                #batch_num += 1
+                return temp_path
+            except Exception as e:
+                logger.error(f"处理事件{batch_num}失败: {str(e)}")
+                return None
+
+        # 使用线程池并行处理所有事件
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for i, event_req in enumerate(all_events):
+                if i > 0:  # 第一个任务立即执行，后续任务延迟
+                    import time
+                    time.sleep(10)  # 10秒间隔
+                future = executor.submit(
+                    process_event,
+                    event_req_tuple=event_req,
+                    batch_num=batch_num + i,
+                    temp_dir=temp_dir,
+                    request_file=request_file,
+                    base_content=base_content,
+                    prompt=prompt,
+                    request_name=request_name
+                )
+                futures.append(future)
+
+            # 收集所有处理结果
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result:
+                        temp_files.append(result)
+                except Exception as e:
+                    logger.error(f"处理事件失败: {str(e)}")
 
         # 合并临时文件
         full_table = merge_temp_files(temp_files)
