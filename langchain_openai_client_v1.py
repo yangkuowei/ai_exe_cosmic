@@ -134,15 +134,13 @@ class LangChainCosmicTableGenerator:
                     config=config,
                 )
                 logger.info("收到AI响应 (长度: %d 字符)", len(response.content))
-                logger.debug("响应内容摘要: %s", response.content)
-                
+
                 full_answer = response.content
                 extracted_data = extractor(full_answer)
                 is_valid, error = validator(extracted_data)
 
                 if is_valid:
                     logger.info(f"校验通过 (线程ID: {threading.get_ident()})")
-                    logger.debug("最终结果: %s", str(extracted_data)[:500])
                     return extracted_data
                     
                 if attempt == max_chat_count:

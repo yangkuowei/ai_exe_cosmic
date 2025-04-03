@@ -4,7 +4,7 @@ import re
 import logging
 from pathlib import Path
 from typing import Optional, Union, List
-
+import docx
 # 第三方库导入
 import pandas as pd
 from docx import Document
@@ -360,3 +360,66 @@ def merge_temp_files(temp_files: List[Path]) -> str:
                 full_content.extend(content[2:])
 
     return "\n".join(full_content)
+
+
+def read_docx_content(file_path):
+    """
+    读取 .docx 文件的文本内容。
+
+    Args:
+        file_path (str): Word 文档的路径。
+
+    Returns:
+        str: 文档的文本内容，段落之间用换行符分隔。
+             如果文件不存在或读取失败，则返回 None 或错误信息。
+    """
+    # 检查文件是否存在
+    if not os.path.exists(file_path):
+        print(f"错误：文件未找到 - {file_path}")
+        return None
+    # 检查文件扩展名是否为 .docx
+    if not file_path.lower().endswith('.docx'):
+        print(f"警告：文件 '{os.path.basename(file_path)}' 可能不是标准的 .docx 格式。尝试读取...")
+    # 注意：虽然我们会尝试，但 python-docx 主要用于 .docx
+
+    try:
+        # 打开 Word 文档
+        doc = docx.Document(file_path)
+
+        # 用于存储所有段落文本的列表
+        full_text = []
+
+        # 遍历文档中的所有段落
+        for para in doc.paragraphs:
+            full_text.append(para.text)
+
+        # 将列表中的所有文本连接成一个字符串，段落间用换行符分隔
+        return '\n'.join(full_text)
+
+    except docx.opc.exceptions.PackageNotFoundError:
+        print(f"错误：无法打开文件，可能不是有效的 Word (.docx) 文件 - {file_path}")
+        return None
+    except Exception as e:
+        print(f"读取文件时发生未知错误：{e}")
+        return None
+
+
+# --- 使用示例 ---
+if __name__ == "__main__":
+    # --- !!! 修改为你实际的 Word 文档路径 !!! ---
+    # 例如: 'C:/Users/YourUser/Documents/mydocument.docx' (Windows)
+    # 或: '/home/youruser/documents/mydocument.docx' (Linux/Mac)
+    word_file_path = 'C:\\Users\\yangkw\\Desktop\\temp\\【集团需求】关于一级家开平台订购流程和数据一致性优化改造需求 - 关于数据一致性.docx'  # <--- 在这里替换成你的文件路径
+
+    print(f"正在尝试读取文件: {word_file_path}")
+
+    # 调用函数读取内容
+    content = read_docx_content(word_file_path)
+
+    # 如果成功读取到内容，则打印
+    if content is not None:
+        print("\n--- 文档内容 ---")
+        print(content)
+        print("--- 内容结束 ---")
+    else:
+        print("\n未能成功读取文档内容。")

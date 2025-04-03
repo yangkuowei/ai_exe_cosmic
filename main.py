@@ -317,7 +317,7 @@ async def generate_cosmic_table(
         tasks = []
         for i, event_req in enumerate(all_events):
             if i > 0:  # 第一个任务立即执行，后续任务延迟
-                await asyncio.sleep(1)  # 5秒间隔
+                await asyncio.sleep(5)  # 5秒间隔
             
             task = process_event(
                 event_req_tuple=event_req,
