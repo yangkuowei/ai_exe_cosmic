@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 from functools import partial
 import re
@@ -113,7 +114,7 @@ def main() -> None:
         run_stage1 = args.stage1 or not args.stage2
         run_stage2 = args.stage2 or not args.stage1
 
-        run_stage1 = False
+        #run_stage1 = False
         if run_stage1:
             # 阶段1：生成触发事件JSON
             json_str = generate_trigger_events(
@@ -221,8 +222,8 @@ def generate_cosmic_table(
     try:
         # 解析原始JSON数据
         cosmic_data = json.loads(json_data)
-        # 创建临时目录
-        temp_dir = output_dir / "temp"
+        # 创建临时目录 (使用需求文件名作为目录名)
+        temp_dir = output_dir / f"temp_{request_file.stem}"
         temp_dir.mkdir(exist_ok=True)
 
         # 结果队列
@@ -255,6 +256,7 @@ def generate_cosmic_table(
                 event_idx += 1
                 t.start()
                 threads.append(t)
+                time.sleep(5)  # 添加5秒延迟
 
         # 等待所有线程完成
         for t in threads:
