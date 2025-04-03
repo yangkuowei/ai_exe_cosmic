@@ -128,7 +128,7 @@ class LangChainCosmicTableGenerator:
         
         for attempt in range(max_chat_count + 1):
             try:
-                logger.info(f"第 {attempt + 1}/{max_chat_count + 1} 次尝试")
+                logger.info(f"第 {attempt + 1}/{max_chat_count + 1} 次尝试 (线程ID: {threading.get_ident()})")
                 response = await with_message_history.ainvoke(
                     [HumanMessage(content=requirement_content)],
                     config=config,
