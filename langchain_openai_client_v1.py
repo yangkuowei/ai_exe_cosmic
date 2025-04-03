@@ -82,7 +82,7 @@ class LangChainCosmicTableGenerator:
         if config.max_tokens < 100:
             logger.warning("max_tokens值(%d)可能过小", config.max_tokens)
 
-    async def generate_table_async(
+    def generate_table(
             self,
             cosmic_ai_prompt: str,
             requirement_content: str,
@@ -129,7 +129,7 @@ class LangChainCosmicTableGenerator:
         for attempt in range(max_chat_count + 1):
             try:
                 logger.info(f"第 {attempt + 1}/{max_chat_count + 1} 次尝试 (线程ID: {threading.get_ident()})")
-                response = await with_message_history.ainvoke(
+                response =  with_message_history.invoke(
                     [HumanMessage(content=requirement_content)],
                     config=config,
                 )
@@ -177,7 +177,7 @@ class LangChainCosmicTableGenerator:
 2. 仅修改校验不通过的内容，已通过的内容不再修改按照上个输出版本的内容输出
 """
 
-async def call_ai_async(
+def call_ai(
         ai_prompt: str,
         requirement_content: str,
         extractor: Callable[[str], Any],
@@ -199,7 +199,7 @@ async def call_ai_async(
         经过验证的最终结果
     """
     generator = LangChainCosmicTableGenerator(config=config)
-    return await generator.generate_table_async(
+    return generator.generate_table(
         ai_prompt,
         requirement_content,
         extractor,
