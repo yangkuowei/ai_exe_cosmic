@@ -115,7 +115,7 @@ async def main() -> None:
         run_stage1 = args.stage1 or not args.stage2
         run_stage2 = args.stage2 or not args.stage1
 
-        #run_stage1 = False
+        run_stage1 = False
         if run_stage1:
             # 阶段1：生成触发事件JSON
             json_str = await generate_trigger_events(
@@ -201,7 +201,7 @@ async def generate_cosmic_table(
         request_file: Path,
         request_name: str,
         batch_size: int = 5,  # 保留参数但不再使用
-        max_workers: int = 20,  # 限制并发数避免API限流
+        max_workers: int = 8,  # 限制并发数避免API限流
 ) -> None:
     """生成COSMIC表格（支持多线程并行处理）
     
@@ -313,23 +313,30 @@ async def generate_cosmic_table(
                 logger.error(f"处理事件{batch_num}失败: {str(e)}")
                 return None
 
-        # 直接创建协程任务并行处理
-        tasks = []
-        for i, event_req in enumerate(all_events):
-            if i > 0:  # 第一个任务立即执行，后续任务延迟
-                await asyncio.sleep(5)  # 5秒间隔
-            
-            task = process_event(
-                event_req_tuple=event_req,
-                batch_num=batch_num + i,
-                temp_dir=temp_dir,
-                request_file=request_file,
-                base_content=base_content,
-                prompt=prompt,
-                request_name=request_name
-            )
-            tasks.append(task)
+        # 使用信号量控制并发量
+        semaphore = asyncio.Semaphore(max_workers)
+        
+        async def limited_process_event(event_req, i):
+            """带并发限制的事件处理"""
+            async with semaphore:
+                if i > 0:  # 第一个任务立即执行，后续任务延迟
+                    await asyncio.sleep(5)  # 5秒间隔
+                return await process_event(
+                    event_req_tuple=event_req,
+                    batch_num=batch_num + i,
+                    temp_dir=temp_dir,
+                    request_file=request_file,
+                    base_content=base_content,
+                    prompt=prompt,
+                    request_name=request_name
+                )
 
+        # 创建并执行所有任务
+        tasks = [
+            limited_process_event(event_req, i)
+            for i, event_req in enumerate(all_events)
+        ]
+        
         # 等待所有任务完成
         results = await asyncio.gather(*tasks, return_exceptions=True)
         

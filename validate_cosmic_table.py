@@ -3,6 +3,7 @@ import json
 
 import markdown
 from typing import List, Dict, Tuple, Set, Optional, Any, Union
+from bs4 import BeautifulSoup
 
 # 校验、文本内容提取相关
 import re
@@ -13,158 +14,262 @@ from typing import Tuple
 def validate_cosmic_table(markdown_table_str: str, request_name: str) -> Tuple[bool, str]:
     """
     校验COSMIC功能点度量表格。
+    此版本校验Markdown表格内部的结构和内容是否符合COSMIC规则。
 
     参数：
     markdown_table_str (str): Markdown格式的表格字符串。
-    request_name (str): 客户需求名称。
+    request_name (str): 客户需求名称 (用于校验表格第一列)。
 
     返回值：
     tuple: (bool, str)，第一个元素表示校验是否通过，
            第二个元素是错误信息字符串（如果校验不通过, 多个错误用换行符分隔）。
     """
 
-    try:
-        table = markdown_table_to_list(markdown_table_str)
-    except Exception as e:
-        return False, f"解析 Markdown 表格失败: {e}"
-
-    errors: List[str] = []
-
-    # 检查表头
-    expected_headers = ["客户需求", "功能用户", "功能用户需求", "触发事件", "功能过程",
+    # --- 常量定义 ---
+    EXPECTED_HEADERS = ["客户需求", "功能用户", "功能用户需求", "触发事件", "功能过程",
                         "子过程描述", "数据移动类型", "数据组", "数据属性", "复用度", "CFP", "ΣCFP"]
-    if not table or list(table[0].keys()) != expected_headers:
-        errors.append("表头错误，应包含以下列：" + ", ".join(expected_headers))
-        return False, "\n".join(errors)  # 表头不对，直接返回
 
-    # 用于跟踪每个功能过程的数据移动类型
-    process_data_moves: Dict[str, List[str]] = {}
-    # 用于检查数据属性的唯一性
-    all_data_attributes: Set[Tuple] = set()
-    # 用于检查触发事件和功能过程的对应关系, 存储每个触发事件对应的功能过程列表
-    trigger_process_map: Dict[str, List[str]] = {}
-    # 用于存储每个功能过程对应的子过程描述列表
-    process_subprocesses_map: Dict[str, List[str]] = {}
+    FORBIDDEN_KEYWORDS_PROCESS = {
+        "加载", "解析", "初始化", "点击按钮", "页面", "渲染", "保存", "输入",
+        "读取", "获取", "输出", "切换", "计算", "重置", "分页", "排序",
+        "适配", "开发", "部署", "迁移", "安装", "存储", "缓存", "校验",
+        "验证", "是否", "判断"
+    }
 
-    for row_num, row in enumerate(table, 1):  # row_num从1开始，方便错误信息提示
-        request_name_str = row["客户需求"]
-        trigger_event = row["触发事件"]
-        process = row["功能过程"]
-        sub_process = row["子过程描述"]
-        data_move_type = row["数据移动类型"]
-        data_group = row["数据组"]
-        data_attributes_str = row["数据属性"]
+    FORBIDDEN_KEYWORDS_SUBPROCESS = {
+        "校验", "验证", "检查", "判断", "组装报文", "构建报文", "日志保存",
+        "写日志", "加载", "解析", "初始化", "点击按钮", "页面", "渲染",
+        "保存", "输入", "读取", "获取", "输出", "切换", "计算", "重置",
+        "分页", "排序", "适配", "开发", "部署", "迁移", "安装", "存储",
+        "缓存", "调用XX接口" # 假设 "调用XX接口" 是一个通用模式
+    }
+
+    VALID_DATA_MOVE_TYPES = {"E", "X", "R", "W"}
+    FUNCTIONAL_USER_REGEX = r"^发起者:\s*.*?\s*接收者：\s*.*$"
+    DATA_ATTRIBUTE_REGEX = r"^[\u4e00-\u9fa5\s,，]+$"
+    DATA_ATTRIBUTE_SPLIT_REGEX = r"[,，]\s*"
+
+    # --- 主校验逻辑 ---
+    errors: List[str] = []
+    table_data: List[Dict[str, str]] = [] # 初始化为空列表
+
+    # 1. 调用外部函数解析 Markdown 表格
+    try:
+        # 假设 markdown_table_to_list 存在于当前作用域或已导入
+        # 并且在解析失败时会抛出异常
+        table_data = markdown_table_to_list(markdown_table_str)
+        # 可以在这里添加对返回类型的基本检查，如果需要的话
+        if not isinstance(table_data, list):
+             raise TypeError("markdown_table_to_list 未返回列表")
+        if table_data and not isinstance(table_data[0], dict):
+             raise TypeError("markdown_table_to_list 返回的列表元素不是字典")
+        # 可以在这里检查表头是否与预期一致，如果解析函数不保证的话
+        if table_data:
+             first_row_keys = list(table_data[0].keys()) # 假设解析函数保留了原始顺序
+             if first_row_keys != EXPECTED_HEADERS:
+                 # 注意：如果 markdown_table_to_list 不保证列顺序，这个检查可能不可靠
+                 # 或者，如果 markdown_table_to_list 返回的是无序字典，需要检查键集合是否相等
+                 if set(first_row_keys) != set(EXPECTED_HEADERS):
+                      return False, f"Markdown表格解析错误：表头不匹配。\n预期: {EXPECTED_HEADERS}\n实际: {first_row_keys}"
+                 else:
+                      # 如果只是顺序不同，可以接受或重新排序，但这里按严格匹配处理
+                      return False, f"Markdown表格解析错误：表头顺序不匹配。\n预期: {EXPECTED_HEADERS}\n实际: {first_row_keys}"
 
 
-        if request_name_str != request_name:
-            errors.append(f" 客户需求 必须为[{request_name}]'。")
+    except Exception as e:
+        # 捕获解析过程中可能出现的任何异常
+        return False, f"Markdown表格解析失败: {e}"
 
-        # 1. 触发事件与功能过程的对应关系
-        if trigger_event not in trigger_process_map:
-            trigger_process_map[trigger_event] = [process]
+    # 检查解析结果是否为空（例如，只有表头的情况）
+    if not table_data:
+        # 根据需求决定空表是否为错误
+        # return False, "表格内容不能为空"
+        pass # 当前允许空表，后续检查会跳过
+
+    # --- 初始化检查所需的数据结构 ---
+    process_rows: Dict[str, List[Dict[str, Any]]] = {}
+    all_data_attributes_tuples: Set[Tuple[str, ...]] = set()
+    process_entry_details: Dict[str, Tuple[str, Tuple[str, ...]]] = {}
+    process_exit_details: Dict[str, Tuple[str, Tuple[str, ...]]] = {}
+    process_read_details: Dict[str, List[Tuple[str, Tuple[str, ...]]]] = {}
+
+
+    # --- 逐行基础校验 ---
+    # 假设 markdown_table_to_list 返回的列表不包含表头行
+    # 行号需要根据 markdown_table_str 的原始行数计算，或者简化为基于数据的行号
+    # 为了简化，这里的行号将是基于 table_data 的索引 + 1 （数据区的行号）
+    # 如果需要精确的文件行号，需要在解析函数或这里做额外处理
+    for row_index, row in enumerate(table_data):
+        data_row_num = row_index + 1 # 数据区的行号 (从1开始)
+        # 如果需要文件行号，大约是 data_row_num + 2 (假设表头和分隔行各占1行)
+        file_row_num = data_row_num + 2
+
+        # 添加行号信息到row字典中，方便后续错误报告
+        row['_data_row_num'] = data_row_num
+        row['_file_row_num'] = file_row_num
+
+        # 从行数据中提取字段 (使用 .get() 增加健壮性，以防列缺失)
+        req_name_cell = row.get("客户需求", "")
+        func_user_cell = row.get("功能用户", "")
+        func_req_cell = row.get("功能用户需求", "") # 可能为空
+        trigger_event_cell = row.get("触发事件", "")
+        process_cell = row.get("功能过程", "")
+        sub_process_cell = row.get("子过程描述", "")
+        data_move_type_cell = row.get("数据移动类型", "")
+        data_group_cell = row.get("数据组", "")
+        data_attributes_str_cell = row.get("数据属性", "")
+        reuse_cell = row.get("复用度", "")
+        cfp_cell = row.get("CFP", "")
+        sum_cfp_cell = row.get("ΣCFP", "") # 确认是 Sigma CFP
+
+        # --- 执行单行校验 ---
+
+        # 规则 3: 客户需求
+        if req_name_cell != request_name:
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '客户需求' ({req_name_cell}) 与指定的需求名称 ({request_name}) 不匹配。")
+
+        # 规则 4 & 输入校验: 功能用户
+        if not func_user_cell:
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '功能用户' 不能为空。")
+        elif not re.match(FUNCTIONAL_USER_REGEX, func_user_cell):
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '功能用户' ({func_user_cell}) 格式错误，应为 '发起者: [系统] 接收者：[系统]'。")
+
+        # 规则 6 & 输入校验: 触发事件
+        if not trigger_event_cell:
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '触发事件' 不能为空。")
+
+        # 规则 7: 功能过程
+        if not process_cell:
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '功能过程' 不能为空。")
         else:
-            if process not in trigger_process_map[trigger_event]:
-                trigger_process_map[trigger_event].append(process)
+            for keyword in FORBIDDEN_KEYWORDS_PROCESS:
+                if keyword in process_cell:
+                    errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '功能过程' ({process_cell}) 包含禁用关键字 '{keyword}'。")
 
-        # 2. 功能过程 - 避免开发术语，不包含“校验”
-        if "校验" in process:
-            errors.append(f"第{row_num}行：功能过程 '{process}' 禁止包含 '校验'，请替换表达词语。")
-
-        # 3. 子过程描述规则
-        if "校验" in sub_process:
-            #errors.append(f"第{row_num}行：子过程描述 '{sub_process}' 禁止包含 '校验'，请替换表达词语。")
-            pass
-        if sub_process == process:
-            errors.append(f"第{row_num}行：子过程描述 '{sub_process}' 不能与功能过程描述相同。")
-
-        # 4. 数据移动类型规则
-        if data_move_type not in ("E", "X", "R", "W"):
-            errors.append(f"第{row_num}行：数据移动类型 '{data_move_type}' 无效。")
-
-        # 跟踪每个功能过程的数据移动
-        if process not in process_data_moves:
-            process_data_moves[process] = []
-        process_data_moves[process].append(data_move_type)
-
-        # 5. 数据组 - 输入输出不能相同 (更严格的检查在所有行处理完后进行)
-
-        # 6. 数据属性规则
-        if not data_attributes_str:
-            errors.append(f"第{row_num}行：数据属性不能为空。")
+        # 规则 8: 子过程描述
+        if not sub_process_cell:
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '子过程描述' 不能为空。")
         else:
-            data_attributes = [attr.strip() for attr in re.split(r"[、，,]", data_attributes_str)]  # 使用中文逗号和顿号分割
+            if sub_process_cell == process_cell:
+                errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '子过程描述' ({sub_process_cell}) 不能与 '功能过程' 相同。")
+            for keyword in FORBIDDEN_KEYWORDS_SUBPROCESS:
+                if keyword == "调用XX接口" and "调用" in sub_process_cell and "接口" in sub_process_cell:
+                     errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '子过程描述' ({sub_process_cell}) 包含禁用模式 '调用XX接口'。")
+                elif keyword != "调用XX接口" and keyword in sub_process_cell:
+                     errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '子过程描述' ({sub_process_cell}) 包含禁用关键字 '{keyword}'。")
 
-            if not (2 <= len(data_attributes) <= 15):
-                errors.append(f"第{row_num}行：数据属性数量应在2到15个之间。")
+        # 规则 9: 数据移动类型
+        if data_move_type_cell not in VALID_DATA_MOVE_TYPES:
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '数据移动类型' ({data_move_type_cell}) 无效，必须是 E, X, R, W 中的一个。")
 
-            data_attributes_tuple = tuple(sorted(data_attributes))  # 排序后转为元组，用于比较
-            if data_attributes_tuple in all_data_attributes:
-                errors.append(f"第{row_num}行：数据属性组合 '{data_attributes_str}' 重复。")
-            all_data_attributes.add(data_attributes_tuple)
+        # 规则 10: 数据组
+        if not data_group_cell:
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '数据组' 不能为空。")
 
-        # 7. 记录功能过程和子过程描述的对应关系
-        if process not in process_subprocesses_map:
-            process_subprocesses_map[process] = [sub_process]
+        # 规则 11: 数据属性
+        if not data_attributes_str_cell:
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '数据属性' 不能为空。")
         else:
-            if sub_process not in process_subprocesses_map[process]:
-                process_subprocesses_map[process].append(sub_process)
-
-    # 循环结束后检查触发事件对应的功能过程数量
-    for trigger_event, processes in trigger_process_map.items():
-        if not 1 <= len(processes) <= 6:
-            errors.append(f"触发事件 '{trigger_event}' 对应功能过程数量不符合要求（应为1到6个）。")
-
-    # 循环结束后检查功能过程对应的子过程描述数量
-    for process, subprocesses in process_subprocesses_map.items():
-        if not 2 <= len(subprocesses) <= 5:
-            errors.append(f"功能过程 '{process}' 包含子过程描述数量不符合要求（应为2到5个）。")
-
-    # 检查每个功能过程的数据移动类型是否符合要求 (E开头，W/X结尾, 以及 R 的数量)
-    for process, moves in process_data_moves.items():
-        if not moves:
-            continue  # 允许moves为空
-        if moves[0] != "E" or moves[-1] not in ("W", "X"):
-            errors.append(f"功能过程 '{process}' 的数据移动类型不符合要求（应以E开头，W/X结尾）。")
-            continue  # 继续检查下一个功能过程
-
-        # 检查是否为 WX 结构
-        if moves == ["E","W", "X"]:
-            errors.append(f"功能过程 '{process}' 的数据移动类型不能是 WX 结构。")
-
-        # 检查查询类功能是否为ERX结构
-        if len(moves) == 3 and moves == ["E", "R", "X"]:
-            continue  # 查询类，跳过后续检查
-
-        # 检查连续R的数量 (新增)
-        r_count = 0
-        for move in moves:
-            if move == "R":
-                r_count += 1
-                if r_count > 2:
-                    errors.append(f"功能过程 '{process}' 的数据移动类型中包含连续2个或更多个R。")
-                    break  # 发现连续2个R，停止检查此功能过程
+            if not re.fullmatch(DATA_ATTRIBUTE_REGEX, data_attributes_str_cell):
+                # 提取无效字符用于提示
+                invalid_chars = "".join(sorted(list(set(re.sub(r'[\u4e00-\u9fa5\s,，]', '', data_attributes_str_cell)))))
+                errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '数据属性' ({data_attributes_str_cell}) 包含非中文、逗号或空格的字符 (例如: '{invalid_chars}')。")
             else:
-                r_count = 0  # 重置连续R的计数
+                attributes = [attr.strip() for attr in re.split(DATA_ATTRIBUTE_SPLIT_REGEX, data_attributes_str_cell) if attr.strip()]
+                if not (3 <= len(attributes) <= 15):
+                    errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '数据属性' 数量为 {len(attributes)}，应在 3 到 15 个之间。属性列表: {attributes}")
 
-        # 检查其他类型功能是否为EX或EW结构（可包含R）
-        if not ("E" in moves and moves[-1] in ("X", "W") and all(m in ("E", "X", "R", "W") for m in moves)):
-            errors.append(f"功能过程 '{process}' 的数据移动类型不符合EX、EW或E-R-X/W结构。")
+                attributes_tuple = tuple(sorted(attributes))
+                if attributes_tuple in all_data_attributes_tuples:
+                    # errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): 数据属性组合 '{data_attributes_str_cell}' 与其他行重复。") # 规则未强制唯一
+                    pass
+                else:
+                    all_data_attributes_tuples.add(attributes_tuple)
 
-    # 更严格的数据组检查（在所有行处理完后）
-    input_groups: Set[str] = set()
-    output_groups: Set[str] = set()
-    for row in table:
-        data_move_type = row["数据移动类型"]
-        data_group = row["数据组"]
-        if data_move_type == "E":
-            input_groups.add(data_group)
-        elif data_move_type in ("X", "W"):  # 允许W作为出口
-            output_groups.add(data_group)
-    if input_groups.intersection(output_groups):
-        errors.append("存在相同的数据组既用于输入又用于输出。")
+                current_details = (data_group_cell, attributes_tuple)
+                if data_move_type_cell == 'E':
+                    if process_cell in process_entry_details:
+                         errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): 功能过程 '{process_cell}' 检测到多个 'E' 入口。")
+                    process_entry_details[process_cell] = current_details
+                elif data_move_type_cell in ('W', 'X'):
+                    process_exit_details[process_cell] = current_details # 保留最后一个W/X
+                elif data_move_type_cell == 'R':
+                    if process_cell not in process_read_details:
+                        process_read_details[process_cell] = []
+                    process_read_details[process_cell].append(current_details)
 
-    return (not errors), "\n".join(errors)
+        # 规则 12: 固定字段
+        if reuse_cell != "新增":
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '复用度' ({reuse_cell}) 应为 '新增'。")
+        if cfp_cell != "1":
+            errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): 'CFP' ({cfp_cell}) 应为 '1'。")
+        if sum_cfp_cell != "1":
+             errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): 'ΣCFP' ({sum_cfp_cell}) 应为 '1'。")
 
+        # --- 收集数据用于后续跨行校验 ---
+        if process_cell: # 仅在功能过程非空时收集
+            if process_cell not in process_rows:
+                process_rows[process_cell] = []
+            process_rows[process_cell].append(row) # 存储包含行号信息的整行数据
+
+    # --- 跨行校验 ---
+    if not table_data and not errors: # 如果解析成功但表格是空的,且之前没有解析错误
+        # errors.append("校验警告：表格内容为空。") # 根据需求决定是否报错
+        pass # 允许空表
+
+    for process, rows in process_rows.items():
+        # 按文件行号排序，确保数据移动顺序正确
+        rows.sort(key=lambda r: r['_file_row_num'])
+        moves = [row["数据移动类型"] for row in rows]
+        # 使用文件行号列表进行错误报告
+        file_row_nums = [row['_file_row_num'] for row in rows]
+
+        # 规则 8: 子过程数量
+        if not (2 <= len(rows) <= 5):
+            errors.append(f"功能过程 '{process}' (涉及文件行: {file_row_nums}) 包含 {len(rows)} 个子过程，应在 2 到 5 个之间。")
+
+        # 规则 9: 数据移动序列
+        if not moves: continue
+
+        if moves[0] != 'E':
+            errors.append(f"功能过程 '{process}' (文件行 {file_row_nums[0]}) 的数据移动序列 '{''.join(moves)}' 未以 'E' 开头。")
+        if moves[-1] not in ('W', 'X'):
+             errors.append(f"功能过程 '{process}' (文件行 {file_row_nums[-1]}) 的数据移动序列 '{''.join(moves)}' 未以 'W' 或 'X' 结尾。")
+
+        for i in range(len(moves) - 1):
+            if moves[i] == 'W' and moves[i+1] == 'X':
+                errors.append(f"功能过程 '{process}' (文件行 {file_row_nums[i+1]}) 存在不允许的 'WX' 相邻数据移动。")
+            if moves[i] == 'X' and moves[i+1] in ('W', 'R'):
+                 errors.append(f"功能过程 '{process}' (文件行 {file_row_nums[i+1]}) 存在不允许的 'X{moves[i+1]}' 数据移动序列。")
+
+        # 规则 10 & 11: 数据组和属性逻辑
+        is_query = (len(moves) == 3 and moves == ['E', 'R', 'X'])
+
+        if process in process_entry_details and process in process_exit_details:
+            entry_group, entry_attrs_tuple = process_entry_details[process]
+            exit_group, exit_attrs_tuple = process_exit_details[process]
+            if moves[-1] == 'W' and entry_attrs_tuple == exit_attrs_tuple:
+                 # 定位到最后一个W行的文件行号
+                 last_w_row_num = rows[-1]['_file_row_num']
+                 errors.append(f"功能过程 '{process}' 的入口 'E' (数据组 '{entry_group}') 和最终出口 'W' (数据组 '{exit_group}', 文件行 {last_w_row_num}) 的数据属性完全相同，'W' 的属性应有所增加或不同。")
+
+        if is_query and process in process_read_details and process in process_exit_details:
+            # 确保ERX结构下只有一个R的数据被记录
+            if len(process_read_details.get(process, [])) == 1:
+                read_group, _ = process_read_details[process][0]
+                exit_group, _ = process_exit_details[process]
+                if read_group != exit_group:
+                    # 对于ERX, R在第二行, X在第三行 (基于排序后的rows列表)
+                    read_row_num = rows[1]['_file_row_num']
+                    exit_row_num = rows[2]['_file_row_num']
+                    errors.append(f"功能过程 '{process}' (查询类 ERX): 'R' (数据组 '{read_group}', 文件行 {read_row_num}) 和 'X' (数据组 '{exit_group}', 文件行 {exit_row_num}) 的数据组不同，通常应相同。")
+            elif len(rows) == 3: # 如果确实是3行但R记录不唯一（理论上不应发生）
+                 errors.append(f"功能过程 '{process}' (查询类 ERX, 文件行 {file_row_nums}) 内部逻辑错误：未能正确记录唯一的 'R' 详情。")
+            # else: # 如果行数不是3，则前面的行数检查会报错，这里无需重复
+
+    # --- 返回结果 ---
+    final_errors = sorted(list(set(errors))) # 去重并排序
+    return (not final_errors), "\n".join(final_errors)
 
 def markdown_table_to_list(markdown_table_str):
     """
@@ -178,47 +283,64 @@ def markdown_table_to_list(markdown_table_str):
     list of dict: 转换后的Python列表，如果无法解析则返回空列表。
     """
     # 预处理：移除可选的 ```markdown ... ``` 包围符
-    # 匹配 ```markdown 开头 (忽略前后空格和换行) 和 ``` 结尾
-    # 并提取中间的内容
     match = re.search(r"^\s*```(?:markdown)?\s*\n?(.*?)\n?\s*```\s*$", markdown_table_str, re.DOTALL | re.IGNORECASE)
     if match:
-        markdown_content = match.group(1).strip() # 提取括号里的内容并去除首尾空格
+        markdown_content = match.group(1).strip()
     else:
-        # 如果没有匹配到代码块标记，假定整个输入就是Markdown内容
         markdown_content = markdown_table_str.strip()
 
-    if not markdown_content: # 如果提取后内容为空，则直接返回
+    if not markdown_content:
         return []
 
-    # 将Markdown转换为HTML (只转换提取出的内容)
-    html = markdown.markdown(markdown_content, extensions=['tables'])
-    # 使用正则表达式提取表格内容
-    table_match = re.search(r'<table>(.*?)</table>', html, re.DOTALL)
-    if not table_match:
+    # 将Markdown转换为HTML
+    # extensions = ['tables', 'nl2br']
+    extensions = ['tables'] # 只使用表格扩展
+    html = markdown.markdown(markdown_content, extensions=extensions)
+
+    # 使用 BeautifulSoup 解析 HTML
+    soup = BeautifulSoup(html, 'lxml') # 或者使用 'html.parser'
+
+    table = soup.find('table')
+    if not table:
+        # print("Debug: No table found in HTML") # 调试信息
+        # print("HTML:", html)
         return []
-    table_html = table_match.group(1)
+
+    headers = []
+    header_row = table.find('thead')
+    if header_row:
+        header_tags = header_row.find_all('th')
+        # 提取表头文本
+        headers = [th.get_text(strip=True) for th in header_tags]
+        # print(f"Debug: Headers found: {headers}") # 调试信息
+    # else:
+        # print("Debug: No thead found") # 调试信息
+
 
     rows = []
-    header = []
-    # 提取表头
-    header_match = re.search(r'<thead>.*?<tr>(.*?)</tr>.*?</thead>', table_html, re.DOTALL)
-    if header_match:
-        header_row_html = header_match.group(1)
-        header = [th.strip() for th in re.findall(r'<th.*>(.*?)</th>', header_row_html)]
+    body = table.find('tbody')
+    if body:
+        data_rows = body.find_all('tr')
+        # print(f"Debug: Found {len(data_rows)} data rows in tbody") # 调试信息
+        for i, data_row in enumerate(data_rows):
+            cells = data_row.find_all('td')
+            # *** 关键改动：提取单元格的内部HTML内容 ***
+            # 使用 decode_contents() 获取标签内部的完整HTML，然后去除首尾空格
+            cell_data = [td.decode_contents().strip() for td in cells]
+            # print(f"Debug: Row {i} cell data: {cell_data}") # 调试信息
 
-    # 提取数据行
-    body_match = re.search(r'<tbody>(.*?)</tbody>', table_html, re.DOTALL)
-    if body_match:
-        body_html = body_match.group(1)
-        row_matches = re.findall(r'<tr>(.*?)</tr>', body_html, re.DOTALL)
-        for row_html in row_matches:
-            row_data = [td.strip() for td in re.findall(r'<td.*>(.*?)</td>', row_html)]
-            if header:
-                rows.append(dict(zip(header, row_data)))  # 与标题对应
-            else:
-                rows.append(row_data)  # 没有标题则直接返回列表
+            if headers and len(headers) == len(cell_data):
+                rows.append(dict(zip(headers, cell_data)))
+            elif not headers and cell_data: # 处理没有表头的情况
+                 rows.append(cell_data)
+            # else:
+                # print(f"Debug: Row {i} column mismatch or no headers. Headers: {len(headers)}, Cells: {len(cell_data)}") # 调试信息
+
+    # else:
+        # print("Debug: No tbody found") # 调试信息
+
+
     return rows
-
 
 def extract_table_from_text(text: str) -> str:
     """
@@ -264,113 +386,183 @@ def validate_all_done(current_answer_content):
     else:
         return 0  # 最后一轮回复
 
+def validate_trigger_event_json(json_str: str, total_rows: int) -> Tuple[bool, str]:
 
-def validate_trigger_event_json(json_str, total_rows) -> Tuple[bool, str]:
     """
-    校验AI生成的触发事件和功能过程列表（JSON格式）。
+    根据最新的COSMIC AI提示词规则，校验AI生成的JSON输出。
 
     Args:
-        ai_response: AI的完整回复（可能包含非JSON内容）。
-        total_rows:  预期的总行数。
+        json_str: AI生成的JSON字符串。
+        total_rows: 用户期望的总行数（用于功能过程总数估算）。
 
     Returns:
-        tuple: (bool, list)
-            - 第一个元素: 是否校验通过 (True/False)。
-            - 第二个元素: 如果校验失败，返回错误原因列表；如果校验通过，返回空列表。
+        tuple: (bool, str)
+            - bool: 校验是否通过 (True/False)。
+            - str: 错误/警告信息列表（换行符分隔），如果通过则为空字符串。
     """
+    # 功能用户需求(FUR)规则
+    FUR_MAX_LEN = 40
+    FUR_MIN_TE = 1
+    FUR_MAX_TE = 8
+
+    # 触发事件(TE)规则
+    TE_MIN_FP = 1
+    TE_MAX_FP = 6
+
+    # 功能过程(FP)规则
+    # 严格禁止的关键字
+    FP_FORBIDDEN_KEYWORDS_ERROR = ["校验", "验证", "判断", "是否", "日志", "组装", "构建"]
+    # 建议避免的关键字 (技术/实现细节, 来自规则4, 经验8)
+    FP_FORBIDDEN_KEYWORDS_WARN = [
+        "加载", "解析", "初始化", "点击", "按钮", "页面", "渲染",
+        "保存",  # 除非指持久化存储 W
+        "输入",  # 除非指数据入口 E
+        "读取",  # 除非指数据读取 R
+        "获取",  # 倾向于使用更具体的 R/E
+        "输出",  # 除非指数据出口 X
+        "切换", "计算", "重置", "分页", "排序", "适配",
+        "开发", "部署", "迁移", "安装",
+        "存储",  # 除非指持久化存储 W
+        "缓存", "接口"  # 避免前后端重复计数 (经验5)
+    ]
+    # 合并用于检查
+    ALL_FORBIDDEN_KEYWORDS = set(FP_FORBIDDEN_KEYWORDS_ERROR + FP_FORBIDDEN_KEYWORDS_WARN)
+
+    # 功能过程(FP)总数估算相关 (基于平均子过程数 2.5 )
+    FP_TOTAL_COUNT_FACTOR_MIN = 3.0
+    FP_TOTAL_COUNT_FACTOR_MAX = 2.0
+
 
     errors: List[str] = []
+    all_functional_processes: List[str] = [] # 用于全局功能过程重名检查
 
-    # 1. 尝试提取JSON
+
+    # --- 1. JSON 解析 ---
     try:
         data = json.loads(json_str)
     except (json.JSONDecodeError, ValueError) as e:
-        errors.append(f"JSON解析错误: {e}")
-        return False, "\n".join(errors)  # 如果JSON解析失败，直接返回
+        errors.append(f"致命错误: JSON解析失败 - {e}")
+        return False, "\n".join(errors) # 致命错误，停止校验
 
-    # 2. 结构校验
+    # --- 2. 基础结构校验 ---
     if not isinstance(data, dict) or "functional_user_requirements" not in data:
-        errors.append("JSON结构错误：缺少 'functional_user_requirements' 键。")
+        errors.append("致命错误: JSON顶层结构错误，必须是包含 'functional_user_requirements' 键的字典。")
+        return False, "\n".join(errors) # 致命错误
 
-    else:
-        for req_index, req in enumerate(data["functional_user_requirements"]):
-            if not isinstance(req, dict) or "requirement" not in req or "trigger_events" not in req:
-                errors.append(
-                    f"JSON结构错误：'functional_user_requirements'[{req_index}] 缺少 'requirement' 或 'trigger_events' 键。")
-                continue  # 如果缺少关键键，跳过当前需求，继续检查下一个
+    if not isinstance(data.get("functional_user_requirements"), list):
+         errors.append("致命错误: 'functional_user_requirements' 的值必须是一个列表。")
+         return False, "\n".join(errors) # 致命错误
 
-            # 新增校验 1: requirement 长度校验
-            if len(req["requirement"]) > 40:
-                errors.append(
-                    f"功能用户需求[{req['requirement']}]名称长度不能超过40，请概况总结")
+    if not data.get("functional_user_requirements"):
+        errors.append("结构校验错误: 'functional_user_requirements' 列表不能为空，至少需要一个功能用户需求。")
+        # 不直接返回，继续检查其他可能的问题
 
-            if not isinstance(req["trigger_events"], list):
-                errors.append(
-                    f"JSON结构错误: 'functional_user_requirements'[{req_index}]['trigger_events'] 必须是列表。")
-                continue
+    # --- 3. 详细元素校验 ---
+    total_process_count = 0
+    total_event_count = 0
 
-            # 新增校验 2: 同一个 functional_user_requirements 下的 trigger_events 数量不能超过 5 个
-            if len(req["trigger_events"]) > 6:
-                errors.append(
-                    f"数量校验错误: 'functional_user_requirements'[{req_index}] 的触发事件 'trigger_events' 数量不能超过 6 个。可以拆分更多的功能用户需求来解决"
-                )
+    for i, fur in enumerate(data.get("functional_user_requirements", [])):
+        fur_path = f"functional_user_requirements[{i}]" # 用于错误定位
 
-            for event_index, event in enumerate(req["trigger_events"]):
-                if not isinstance(event, dict) or "event" not in event or "functional_processes" not in event:
-                    errors.append(
-                        f"JSON结构错误：'functional_user_requirements'[{req_index}]['trigger_events'][{event_index}] 缺少 'event' 或 'functional_processes' 键。")
-                    continue
+        # 3.1 功能用户需求 (FUR) 校验
+        if not isinstance(fur, dict):
+            errors.append(f"结构校验错误: {fur_path} 必须是一个字典。")
+            continue # 跳过此FUR的后续检查
 
-                if not isinstance(event["functional_processes"], list):
-                    errors.append(
-                        f"JSON结构错误：'functional_user_requirements'[{req_index}]['trigger_events'][{event_index}]['functional_processes'] 必须是列表。")
-                    continue
+        req = fur.get("requirement")
+        events = fur.get("trigger_events")
 
-                if not all(isinstance(process, str) for process in event["functional_processes"]):
-                    errors.append(
-                        f"JSON结构错误：'functional_user_requirements'[{req_index}]['trigger_events'][{event_index}]['functional_processes'] 的元素必须是字符串。")
-                    continue
+        if not isinstance(req, str) or not req:
+            errors.append(f"内容校验错误: {fur_path}['requirement'] 必须是有效的非空字符串。")
+        elif len(req) > FUR_MAX_LEN:
+            errors.append(f"内容校验错误: {fur_path}['requirement'] '{req}' 长度超过 {FUR_MAX_LEN} 个字符，请概括总结。")
 
-                # 3. 数量和关系校验
-                if not (1 <= len(event["functional_processes"]) <= 6):
-                    errors.append(
-                        f"数量校验错误：'functional_user_requirements'[{req_index}]['trigger_events'][{event_index}]['functional_processes'] 应该包含 1 到 6 个元素。一个触发事件一般对应1到6个功能过程")
+        if not isinstance(events, list):
+            errors.append(f"结构校验错误: {fur_path}['trigger_events'] 必须是一个列表。")
+            continue # 没有有效的事件列表，无法继续检查此FUR下的事件
 
-        # 4. 触发事件数量校验 (至少一个)
-        all_trigger_events = [event for req in data["functional_user_requirements"] for event in req["trigger_events"]]
-        if not all_trigger_events:
-            errors.append("数量校验错误：至少需要一个触发事件。")
+        # 规则2：FUR下的TE数量校验
+        if not (FUR_MIN_TE <= len(events) <= FUR_MAX_TE):
+             errors.append(f"数量校验错误: {fur_path} 包含 {len(events)} 个触发事件，应在 {FUR_MIN_TE} 到 {FUR_MAX_TE} 个之间。")
 
-        # 5. 功能过程总数校验 (根据总行数计算范围)
-        total_processes = sum(len(event["functional_processes"]) for event in all_trigger_events)
-        lower_bound = total_rows // 3.3
-        upper_bound = total_rows // 2.5
-        m_bound = total_rows // 3
-        if not (lower_bound <= total_processes <= upper_bound):
-            errors.append(f"数量校验错误：功能过程的总数应在 {m_bound} 个左右（基于总行数 {total_rows}）。")
+        if not events:
+             errors.append(f"结构校验错误: {fur_path}['trigger_events'] 列表不能为空，至少需要一个触发事件。")
 
-        # 6. 触发事件和功能过程的描述格式校验 (仅当 all_trigger_events 不为空时)
-        if all_trigger_events:
-            for event in all_trigger_events:
-                # 以下校验太严格，先注释掉
-                # if not re.match(r"^[\u4e00-\u9fa5_a-zA-Z0-9]+[操作|点击|打开|触发][\u4e00-\u9fa5_a-zA-Z0-9]+$", event["event"]) and \
-                #    not re.match(r"^[\u4e00-\u9fa5_a-zA-Z0-9]+被[\u4e00-\u9fa5_a-zA-Z0-9]+$", event["event"]) :
-                #     errors.append(f"格式校验错误：触发事件描述 '{event['event']}' 不符合 '操作+对象' 或 '对象+被操作' 的格式。")
 
-                for process in event["functional_processes"]:
-                    if "校验" in process:
-                        errors.append(f"格式校验错误：功能过程描述 '{process}' 禁止包含 '校验'，请替换表达词语。")
+        # 3.2 触发事件 (TE) 和 功能过程 (FP) 校验
+        for j, event in enumerate(events):
+            event_path = f"{fur_path}['trigger_events'][{j}]"
+            total_event_count += 1
 
-        # 7. 功能过程判重
-        all_processes = []
-        for req in data["functional_user_requirements"]:
-            for event in req["trigger_events"]:
-                for process in event["functional_processes"]:
-                    if process in all_processes:
-                        errors.append(f"重复性校验错误: 功能过程 '{process}' 重复。")
-                    else:
-                        all_processes.append(process)
+            if not isinstance(event, dict):
+                errors.append(f"结构校验错误: {event_path} 必须是一个字典。")
+                continue # 跳过此TE的后续检查
 
-    # 返回校验结果和错误信息
+            event_desc = event.get("event")
+            processes = event.get("functional_processes")
 
+            if not isinstance(event_desc, str) or not event_desc:
+                errors.append(f"内容校验错误: {event_path}['event'] 必须是有效的非空字符串。")
+                # 可以在此添加对TE命名格式的宽松检查 (可选)
+                # 例如：if not re.search(r"[动词名词]", event_desc): errors.append(...)
+
+            if not isinstance(processes, list):
+                errors.append(f"结构校验错误: {event_path}['functional_processes'] 必须是一个列表。")
+                continue # 没有有效的功能过程列表
+
+            # 规则3：TE下的FP数量校验
+            if not (TE_MIN_FP <= len(processes) <= TE_MAX_FP):
+                 errors.append(f"数量校验错误: {event_path} (触发事件 '{event_desc}') 包含 {len(processes)} 个功能过程，应在 {TE_MIN_FP} 到 {TE_MAX_FP} 个之间 。")
+
+            if not processes:
+                 errors.append(f"结构校验错误: {event_path}['functional_processes'] 列表不能为空，至少需要一个功能过程。")
+
+
+            # 3.3 功能过程 (FP) 详细校验
+            for k, process in enumerate(processes):
+                process_path = f"{event_path}['functional_processes'][{k}]"
+                total_process_count += 1
+
+                if not isinstance(process, str) or not process:
+                    errors.append(f"内容校验错误: {process_path} 必须是有效的非空字符串。")
+                    continue # 跳过此无效过程的后续检查
+
+                # 规则4 & 经验8：禁止的关键字检查
+                found_forbidden = []
+                for keyword in ALL_FORBIDDEN_KEYWORDS:
+                    if keyword in process:
+                        level = "错误" if keyword in FP_FORBIDDEN_KEYWORDS_ERROR else "警告"
+                        found_forbidden.append(f"{level}: 功能过程 '{process}' ({process_path}) 包含禁用/不推荐关键字 '{keyword}'")
+                if found_forbidden:
+                    errors.extend(found_forbidden)
+
+                # 规则4 & 经验5：功能过程唯一性检查
+                if process in all_functional_processes:
+                    errors.append(f"重复性校验错误: 功能过程 '{process}' ({process_path}) 与之前的功能过程重复。")
+                else:
+                    all_functional_processes.append(process)
+
+    # --- 4. 总体数量校验 ---
+    if total_event_count == 0 and not any("functional_user_requirements" in e for e in errors): # 只有在FUR列表本身有效时才报此错
+        errors.append("数量校验错误：整个JSON至少需要包含一个触发事件。")
+
+    if total_process_count == 0 and not any("functional_processes" in e for e in errors): # 只有在TE列表本身有效时才报此错
+         errors.append("数量校验错误：整个JSON至少需要包含一个功能过程。")
+
+
+    # 规则5：功能过程总数估算校验 (基于总行数)
+    # 使用浮点数除法以获得更精确的边界
+    lower_bound = int(total_rows / FP_TOTAL_COUNT_FACTOR_MIN) # 对应每个FP最多子过程数
+    upper_bound = int(total_rows / FP_TOTAL_COUNT_FACTOR_MAX) # 对应每个FP最少子过程数
+    # 确保下限不大于上限
+    if lower_bound > upper_bound:
+        lower_bound, upper_bound = upper_bound, lower_bound # Swap if needed
+    # 提供一个最可能的值，基于提示词示例的 100/2.5
+    most_likely_count = round(total_rows / 2.5)
+
+    if total_process_count > 0 and not (lower_bound <= total_process_count <= upper_bound):
+         errors.append(f"数量校验警告: 功能过程总数 ({total_process_count}) 与预期行数 ({total_rows}) 推算的数量范围 [{lower_bound}-{upper_bound}] (最可能约 {most_likely_count} 个) 不符。请检查拆分粒度。")
+
+
+    # --- 5. 返回结果 ---
     return not errors, "\n".join(errors)
