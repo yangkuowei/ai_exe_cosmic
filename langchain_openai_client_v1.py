@@ -1,17 +1,7 @@
 import os
-import threading
 import logging
-import logging.handlers
-import queue
-from typing import Callable, Tuple, Any, Dict, List, Optional, TypeVar, Awaitable
+from typing import Callable, Tuple, Any, Dict, List, Optional, TypeVar
 from threading import Lock
-import asyncio
-
-# 配置线程安全的日志
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-handler = logging.handlers.QueueHandler(queue.Queue(-1))  # 无界队列
-logger.addHandler(handler)
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
@@ -25,6 +15,7 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from ai_common import ModelConfig
 
+logger = logging.getLogger(__name__)
 T = TypeVar('T')
 
 class ChatHistoryManager:
@@ -121,15 +112,11 @@ class LangChainCosmicTableGenerator:
         config = {"configurable": {"session_id": session_id}}
 
         answer_buffer: List[str] = []
-        #self.chat.callbacks = [self._create_stream_callback(answer_buffer)]
+        self.chat.callbacks = [self._create_stream_callback(answer_buffer)]
 
-        logger.info(f"开始调用AI模型 (线程ID: {threading.get_ident()})")
-        #logger.debug(f"请求参数摘要:\n提示模板: {cosmic_ai_prompt[:100]}...\n需求内容: {requirement_content[:200]}...")
-        
         for attempt in range(max_chat_count + 1):
             try:
-                logger.info(f"第 {attempt + 1}/{max_chat_count + 1} 次尝试 (线程ID: {threading.get_ident()})")
-                response =  with_message_history.invoke(
+                response = with_message_history.invoke(
                     [HumanMessage(content=requirement_content)],
                     config=config,
                 )
@@ -140,7 +127,7 @@ class LangChainCosmicTableGenerator:
                 is_valid, error = validator(extracted_data)
 
                 if is_valid:
-                    logger.info(f"校验通过 (线程ID: {threading.get_ident()})")
+                    logger.info(f"\n校验通过")
                     return extracted_data
                     
                 if attempt == max_chat_count:
@@ -148,8 +135,8 @@ class LangChainCosmicTableGenerator:
                     raise ValueError(f"验证失败：{error}")
 
                 requirement_content = self._build_retry_prompt(error)
-                logger.warning("验证未通过: %s", error)
-                #logger.info("更新请求内容准备重试:\n%s", requirement_content[:300])
+                logger.info(requirement_content)
+                logger.info("第%d次重试，更新请求内容", attempt+1)
 
             except Exception as e:
                 logger.error("生成过程中发生异常：%s", str(e))
@@ -159,23 +146,22 @@ class LangChainCosmicTableGenerator:
 
         return None
 
-    # def _create_stream_callback(self, buffer: List[str]) -> BaseCallbackHandler:
-    #     """创建流式回调处理器"""
-    #     class StreamCallback(BaseCallbackHandler):
-    #         def on_llm_new_token(self, token: str, **kwargs) -> None:
-    #             if token:
-    #                 print(token, end='', flush=True)  # 实时流式输出
-    #                 buffer.append(token)
-    #
-    #     return StreamCallback()
+    def _create_stream_callback(self, buffer: List[str]) -> BaseCallbackHandler:
+        """创建流式回调处理器"""
+        class StreamCallback(BaseCallbackHandler):
+            def on_llm_new_token(self, token: str, **kwargs) -> None:
+                if token:
+                    print(token, end='', flush=True)  # 实时流式输出
+                    buffer.append(token)
+
+        return StreamCallback()
 
     def _build_retry_prompt(self, error: str) -> str:
         """构建重试提示模板"""
         return f"""\n上次生成内容未通过验证：{error}
 请根据以下要求重新生成：
 1. 严格遵循COSMIC规范，使用markdown语法输出
-2. 仅修改校验不通过的内容，已通过的内容不再修改按照上个输出版本的内容输出
-"""
+2. 仅修改校验不通过的内容，已通过的内容不再修改按照上个输出版本的内容输出"""
 
 def call_ai(
         ai_prompt: str,
