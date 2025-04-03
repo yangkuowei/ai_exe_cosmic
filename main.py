@@ -198,7 +198,6 @@ def generate_cosmic_table(
         output_dir: Path,
         request_file: Path,
         request_name: str,
-        batch_size: int = 5,
 ) -> None:
     """生成COSMIC表格（支持分批处理及独立执行）
     
@@ -230,13 +229,14 @@ def generate_cosmic_table(
         result_queue = queue.Queue()
         threads = []
 
+        event_idx = 0
         # 遍历每个需求
         for req in cosmic_data["functional_user_requirements"]:
             requirement_name = req["requirement"]
             req_events = req["trigger_events"]
 
             # 处理每个触发事件
-            for event in req_events:
+            for idx, event in enumerate(req_events):
                 # 创建线程处理事件
                 t = threading.Thread(
                     target=process_single_event,
@@ -248,9 +248,11 @@ def generate_cosmic_table(
                         base_content,
                         prompt,
                         request_name,
-                        result_queue
+                        result_queue,
+                        event_idx
                     )
                 )
+                event_idx += 1
                 t.start()
                 threads.append(t)
 
@@ -316,11 +318,12 @@ def process_single_event(
         base_content,
         prompt,
         request_name,
-        result_queue
+        result_queue,
+        event_idx: int = 0
 ):
     """处理单个触发事件的线程函数"""
     try:
-        temp_filename = f"{request_file.stem}_event{threading.get_ident()}.md"
+        temp_filename = f"{request_file.stem}_event{event_idx}.md"
         temp_path = temp_dir / temp_filename
 
         # 检查文件是否已存在
