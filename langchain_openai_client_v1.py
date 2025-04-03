@@ -1,7 +1,9 @@
 import os
 import logging
 from typing import Callable, Tuple, Any, Dict, List, Optional, TypeVar
-from threading import Lock
+from threading import Lock, get_ident
+import time
+import threading
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
@@ -108,7 +110,7 @@ class LangChainCosmicTableGenerator:
             history_manager.get_session_history,
         )
 
-        session_id = f"session_{os.getpid()}_{id(self)}"
+        session_id = f"thread_{threading.get_ident()}_time{time.time()}"
         config = {"configurable": {"session_id": session_id}}
 
         answer_buffer: List[str] = []

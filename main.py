@@ -7,6 +7,8 @@ from pathlib import Path
 import logging
 import argparse
 from dataclasses import dataclass
+import threading
+import queue
 
 from ai_common import load_model_config
 from langchain_openai_client_v1 import call_ai
@@ -76,8 +78,6 @@ def main() -> None:
         config = ProjectPaths()
 
         # 读取需求文件（自动获取最新或通过参数指定）
-
-        # 使用pathlib优化路径操作
         txt_files = sorted(
             config.requirements.glob("*.txt"),
             key=lambda f: f.stat().st_mtime,
@@ -220,93 +220,48 @@ def generate_cosmic_table(
     logger.info("开始生成COSMIC表格...")
 
     try:
-
         # 解析原始JSON数据
         cosmic_data = json.loads(json_data)
         # 创建临时目录
         temp_dir = output_dir / "temp"
         temp_dir.mkdir(exist_ok=True)
 
-        # 分批处理触发事件（按需求逐个处理）
-        batch_num = 1
-        temp_files = []
+        # 结果队列
+        result_queue = queue.Queue()
+        threads = []
 
         # 遍历每个需求
         for req in cosmic_data["functional_user_requirements"]:
             requirement_name = req["requirement"]
             req_events = req["trigger_events"]
 
-            # 改为逐个处理触发事件
+            # 处理每个触发事件
             for event in req_events:
-                temp_filename = f"{request_file.stem}_event{batch_num}.md"
-                temp_path = temp_dir / temp_filename
-
-                batch_num += 1
-
-                # 检查文件是否已存在
-                if temp_path.exists():
-                    print(f"文件 {temp_filename} 已存在，跳过处理")
-                    temp_files.append(temp_path)  # 仍然添加到结果列表中
-                    continue
-
-                # 构建单个触发事件的JSON
-                event_json = {
-                    "functional_user_requirements": [{
-                        "requirement": requirement_name,
-                        "trigger_events": [event]  # 注意这里是一个包含单个事件的数组
-                    }]
-                }
-
-                # 计算本事件的功能过程数量
-                total_processes = sum(
-                    len(e["functional_processes"])
-                    for req in event_json["functional_user_requirements"]
-                    for e in req["trigger_events"]
+                # 创建线程处理事件
+                t = threading.Thread(
+                    target=process_single_event,
+                    args=(
+                        event,
+                        requirement_name,
+                        request_file,
+                        temp_dir,
+                        base_content,
+                        prompt,
+                        request_name,
+                        result_queue
+                    )
                 )
+                t.start()
+                threads.append(t)
 
-                # 生成动态行数范围
-                min_rows = total_processes * 3
-                max_rows = total_processes * 4
-                row_range = f"{min_rows}~{max_rows}"
-                row_range = min_rows
+        # 等待所有线程完成
+        for t in threads:
+            t.join()
 
-                # 更新基础内容中的行数要求
-                content_lines = base_content.splitlines()
-                for i in reversed(range(len(content_lines))):
-                    if "表格总行数要求：" in content_lines[i]:
-                        # 使用正则表达式替换数字部分
-                        content_lines[i] = re.sub(
-                            r"(\d+)(行左右)",
-                            f"{row_range}行（根据功能过程数量动态计算）",
-                            content_lines[i]
-                        )
-                        break
-
-                updated_content = '\n'.join(content_lines)
-
-                # 生成分批内容
-                combined_content = f"{updated_content}\n结合需求背景、详细方案设计按照以下触发事件与功能过程列表生成符合规范的cosmic表格：\n{json.dumps(event_json, ensure_ascii=False, indent=2)}"
-
-                # 调用AI生成表格
-                validator = partial(validate_cosmic_table, request_name=request_name)
-                markdown_table = call_ai(
-                    ai_prompt=prompt,
-                    requirement_content=combined_content,
-                    extractor=extract_table_from_text,
-                    validator=validator,
-                    config=load_model_config()  # 添加必需的config参数
-                )
-
-                # 保存临时文件
-                save_content_to_file(
-                    file_name=temp_filename,
-                    output_dir=str(temp_dir),
-                    content=markdown_table,
-                    content_type="markdown"
-                )
-
-                temp_files.append(temp_path)
-                #batch_num += 1
+        # 收集结果
+        temp_files = []
+        while not result_queue.empty():
+            temp_files.append(result_queue.get())
 
         # 合并临时文件
         full_table = merge_temp_files(temp_files)
@@ -336,7 +291,6 @@ def generate_cosmic_table(
         )
 
         # 生成Excel和Word
-        # processed_table = process_markdown_table(full_table)
         for file_type in ["xlsx", "docx"]:
             save_content_to_file(
                 file_name=request_file.name,
@@ -352,6 +306,86 @@ def generate_cosmic_table(
     except Exception as e:
         logger.error(f"COSMIC表格生成失败: {str(e)}")
         raise
+
+
+def process_single_event(
+        event,
+        requirement_name,
+        request_file,
+        temp_dir,
+        base_content,
+        prompt,
+        request_name,
+        result_queue
+):
+    """处理单个触发事件的线程函数"""
+    try:
+        temp_filename = f"{request_file.stem}_event{threading.get_ident()}.md"
+        temp_path = temp_dir / temp_filename
+
+        # 检查文件是否已存在
+        if temp_path.exists():
+            print(f"文件 {temp_filename} 已存在，跳过处理")
+            result_queue.put(temp_path)
+            return
+
+        # 构建单个触发事件的JSON
+        event_json = {
+            "functional_user_requirements": [{
+                "requirement": requirement_name,
+                "trigger_events": [event]
+            }]
+        }
+
+        # 计算本事件的功能过程数量
+        total_processes = sum(
+            len(e["functional_processes"])
+            for req in event_json["functional_user_requirements"]
+            for e in req["trigger_events"]
+        )
+
+        # 生成动态行数范围
+        min_rows = total_processes * 3
+        row_range = min_rows
+
+        # 更新基础内容中的行数要求
+        content_lines = base_content.splitlines()
+        for i in reversed(range(len(content_lines))):
+            if "表格总行数要求：" in content_lines[i]:
+                content_lines[i] = re.sub(
+                    r"(\d+)(行左右)",
+                    f"{row_range}行（根据功能过程数量动态计算）",
+                    content_lines[i]
+                )
+                break
+
+        updated_content = '\n'.join(content_lines)
+
+        # 生成分批内容
+        combined_content = f"{updated_content}\n结合需求背景、详细方案设计按照以下触发事件与功能过程列表生成符合规范的cosmic表格：\n{json.dumps(event_json, ensure_ascii=False, indent=2)}"
+
+        # 调用AI生成表格
+        validator = partial(validate_cosmic_table, request_name=request_name)
+        markdown_table = call_ai(
+            ai_prompt=prompt,
+            requirement_content=combined_content,
+            extractor=extract_table_from_text,
+            validator=validator,
+            config=load_model_config()
+        )
+
+        # 保存临时文件
+        save_content_to_file(
+            file_name=temp_filename,
+            output_dir=str(temp_dir),
+            content=markdown_table,
+            content_type="markdown"
+        )
+
+        result_queue.put(temp_path)
+
+    except Exception as e:
+        logger.error(f"处理事件失败: {str(e)}")
 
 
 if __name__ == "__main__":
