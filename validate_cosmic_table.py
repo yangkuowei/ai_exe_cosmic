@@ -561,7 +561,7 @@ def validate_trigger_event_json(json_str: str, total_rows: int) -> Tuple[bool, s
     most_likely_count = round(total_rows / 2.5)
 
     if total_process_count > 0 and not (lower_bound <= total_process_count <= upper_bound):
-         errors.append(f"数量校验警告: 功能过程总数 ({total_process_count}) 与预期行数 ({total_rows}) 推算的数量范围 [{lower_bound}-{upper_bound}] (最可能约 {most_likely_count} 个) 不符。请检查拆分粒度。")
+         errors.append(f"数量校验警告: 当前生成的功能过程总数 ({total_process_count}) 与预期行数 ({total_rows}) 推算的功能过程数量范围 [{lower_bound}-{upper_bound}] (最可能约 {most_likely_count} 个) 不符。请检查拆分粒度。")
 
 
     # --- 5. 返回结果 ---

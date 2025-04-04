@@ -114,7 +114,7 @@ class LangChainCosmicTableGenerator:
         config = {"configurable": {"session_id": session_id}}
 
         answer_buffer: List[str] = []
-        #self.chat.callbacks = [self._create_stream_callback(answer_buffer)]
+        self.chat.callbacks = [self._create_stream_callback(answer_buffer)]
 
         for attempt in range(max_chat_count + 1):
             try:
@@ -148,15 +148,15 @@ class LangChainCosmicTableGenerator:
 
         return None
 
-    # def _create_stream_callback(self, buffer: List[str]) -> BaseCallbackHandler:
-    #     """创建流式回调处理器"""
-    #     class StreamCallback(BaseCallbackHandler):
-    #         def on_llm_new_token(self, token: str, **kwargs) -> None:
-    #             if token:
-    #                 print(token, end='', flush=True)  # 实时流式输出
-    #                 buffer.append(token)
-    #
-    #     return StreamCallback()
+    def _create_stream_callback(self, buffer: List[str]) -> BaseCallbackHandler:
+        """创建流式回调处理器"""
+        class StreamCallback(BaseCallbackHandler):
+            def on_llm_new_token(self, token: str, **kwargs) -> None:
+                if token:
+                    print(token, end='', flush=True)  # 实时流式输出
+                    buffer.append(token)
+
+        return StreamCallback()
 
     def _build_retry_prompt(self, error: str) -> str:
         """构建重试提示模板"""
