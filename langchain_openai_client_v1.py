@@ -114,7 +114,7 @@ class LangChainCosmicTableGenerator:
         config = {"configurable": {"session_id": session_id}}
 
         answer_buffer: List[str] = []
-        self.chat.callbacks = [self._create_stream_callback(answer_buffer)]
+        #self.chat.callbacks = [self._create_stream_callback(answer_buffer)]
 
         for attempt in range(max_chat_count + 1):
             try:
@@ -163,7 +163,8 @@ class LangChainCosmicTableGenerator:
         return f"""\n上次生成内容未通过验证：{error}
 请根据以下要求重新生成：
 1. 严格遵循COSMIC规范，使用markdown语法输出
-2. 仅修改校验不通过的内容，已通过的内容不再修改按照上个输出版本的内容输出"""
+2. 仅修改校验不通过的内容，已通过的内容不再修改按照上个输出版本的内容输出。修改的内容也无需添加备注改了哪里
+"""
 
 def call_ai(
         ai_prompt: str,

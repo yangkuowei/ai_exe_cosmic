@@ -12,6 +12,9 @@ from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.shared import Pt, RGBColor
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
+import subprocess
+import win32com.client as win32
+
 # 文件操作
 
 # 配置日志
@@ -362,64 +365,106 @@ def merge_temp_files(temp_files: List[Path]) -> str:
     return "\n".join(full_content)
 
 
-def read_docx_content(file_path):
+def read_word_document(file_path: str) -> str:
     """
-    读取 .docx 文件的文本内容。
+    读取 Word 文档内容（支持 .doc 和 .docx 格式）
 
-    Args:
-        file_path (str): Word 文档的路径。
+    参数:
+        file_path: Word 文件路径
 
-    Returns:
-        str: 文档的文本内容，段落之间用换行符分隔。
-             如果文件不存在或读取失败，则返回 None 或错误信息。
+    返回:
+        文档文本内容
+
+    依赖:
+        - .docx 文件: pip install python-docx
+        - .doc  文件: 需安装 antiword (Linux/macOS: `brew install antiword`, Ubuntu: `sudo apt-get install antiword`)
     """
-    # 检查文件是否存在
-    if not os.path.exists(file_path):
-        print(f"错误：文件未找到 - {file_path}")
-        return None
-    # 检查文件扩展名是否为 .docx
-    if not file_path.lower().endswith('.docx'):
-        print(f"警告：文件 '{os.path.basename(file_path)}' 可能不是标准的 .docx 格式。尝试读取...")
-    # 注意：虽然我们会尝试，但 python-docx 主要用于 .docx
 
-    try:
-        # 打开 Word 文档
-        doc = docx.Document(file_path)
+    def read_doc_file(path):
+        word = win32.gencache.EnsureDispatch('Word.Application')
+        doc = word.Documents.Open(path)
+        content = doc.Content.Text
+        doc.Close()
+        word.Quit()
+        return content
 
-        # 用于存储所有段落文本的列表
-        full_text = []
+    def process_text(content):
+        """
+        数据清洗
+        删除文本中“业务流程（必填）” 后的内容，并删除特殊字符“”。
 
-        # 遍历文档中的所有段落
-        for para in doc.paragraphs:
-            full_text.append(para.text)
+        Args:
+            content: 包含文本内容的字符串。
 
-        # 将列表中的所有文本连接成一个字符串，段落间用换行符分隔
-        return '\n'.join(full_text)
+        Returns:
+            处理后的字符串。
+        """
 
-    except docx.opc.exceptions.PackageNotFoundError:
-        print(f"错误：无法打开文件，可能不是有效的 Word (.docx) 文件 - {file_path}")
-        return None
-    except Exception as e:
-        print(f"读取文件时发生未知错误：{e}")
-        return None
+        markers = [
+            "业务流程（必填）",
+            "业务流程图/时序图（如涉及，必填）"
+        ]
+        # 特殊字符 U+FFFD (REPLACEMENT CHARACTER)
+        # 在 Python 字符串中可以直接使用，或者用 Unicode 转义 \uFFFD
+        special_char = "\x01"
+        # 查找所有标记的所有出现位置
+        occurrences = []
+        for marker in markers:
+            start_pos = 0
+            while True:
+                index = content.find(marker, start_pos)
+                if index == -1:
+                    break  # 当前标记在此后的文本中未找到
+                occurrences.append(index)  # 记录找到的位置
+                # 移动搜索起始点到当前找到的标记之后，避免重复查找同一位置
+                start_pos = index + 1  # 加1即可，find会找到第一个字符匹配的位置
 
+        # 对所有找到的位置进行排序
+        occurrences.sort()
 
-# --- 使用示例 ---
-if __name__ == "__main__":
-    # --- !!! 修改为你实际的 Word 文档路径 !!! ---
-    # 例如: 'C:/Users/YourUser/Documents/mydocument.docx' (Windows)
-    # 或: '/home/youruser/documents/mydocument.docx' (Linux/Mac)
-    word_file_path = 'C:\\Users\\yangkw\\Desktop\\temp\\【集团需求】关于一级家开平台订购流程和数据一致性优化改造需求 - 关于数据一致性.docx'  # <--- 在这里替换成你的文件路径
+        # 初始化 content_to_process 为原始内容
+        content_to_process = content
+        truncation_point = -1  # -1 表示不截断
 
-    print(f"正在尝试读取文件: {word_file_path}")
+        # 检查是否有至少两次出现（任意标记组合）
+        if len(occurrences) >= 2:
+            # 第二次出现的位置是排序后列表的第二个元素 (索引为 1)
+            truncation_point = occurrences[1]
+            print(f"在位置 {truncation_point} 找到第 2 个标记（来自列表 {markers}）。")
+            content_to_process = content[:truncation_point]
+        else:
+            print(f"警告：在文件  中找到的标记（来自列表 {markers}）总数少于 2 个。将不执行截断。")
+            # content_to_process 保持为原始内容
 
-    # 调用函数读取内容
-    content = read_docx_content(word_file_path)
+        # 删除特殊字符 (无论是否截断，都执行此操作)
+        processed_content = content_to_process.replace(special_char, "")
+        processed_content = processed_content.replace('\x07', "")
+        while processed_content.find('\r\r') > -1:
+            processed_content = processed_content.replace('\r\r', "\r")
 
-    # 如果成功读取到内容，则打印
-    if content is not None:
-        print("\n--- 文档内容 ---")
-        print(content)
-        print("--- 内容结束 ---")
+            # --- 步骤 3: 删除前三行 ---
+        lines_to_remove = 3
+        lines = processed_content.splitlines(keepends=True)  # 保留换行符以便正确重组
+        final_lines = lines[lines_to_remove:]
+        processed_content = "".join(final_lines)
+        print(f"已删除前 {lines_to_remove} 行。")
+
+        return processed_content
+
+    if file_path.endswith('.docx'):
+        # 读取 .docx 文件
+        doc = Document(file_path)
+        return '\n'.join(paragraph.text for paragraph in doc.paragraphs)
+
+    elif file_path.endswith('.doc'):
+        # 读取 .doc 文件（依赖 antiword）
+        try:
+            return read_doc_file(file_path)
+        except FileNotFoundError:
+            raise RuntimeError("读取 .doc 文件需要安装 antiword，请执行：sudo apt-get install antiword")
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"读取失败: {e.stderr}")
+
     else:
-        print("\n未能成功读取文档内容。")
+        raise ValueError("仅支持 .doc 和 .docx 格式")
+
