@@ -56,8 +56,8 @@ providers:
       base_url: SILICONFLOW_BASE_URL
       model_name: SILICONFLOW_MODEL
   vllm:
-    base_url: http://localhost:8080/v1/
-    model_name: DeepSeek-R1-Distill-Qwen-7B
+    base_url: http://192.168.3.108:8080/v1/
+    model_name: QwQ-32B-AWQ
     env_mapping:
       api_key: SILICONFLOW_API_KEY
       base_url: SILICONFLOW_BASE_URL

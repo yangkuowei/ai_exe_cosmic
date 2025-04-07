@@ -1,7 +1,5 @@
-import os
 import logging
 from typing import Callable, Tuple, Any, Dict, List, Optional, TypeVar
-from threading import Lock, get_ident
 import time
 import threading
 
@@ -17,36 +15,31 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from ai_common import ModelConfig
 
+# 配置日志
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 T = TypeVar('T')
 
-class ChatHistoryManager:
-    """线程安全的聊天历史管理类，支持LRU缓存"""
+class ThreadLocalChatHistoryManager:
+    """线程本地聊天历史管理类，每个线程独立实例"""
     
-    def __init__(self, max_sessions: int = 100):
-        self.store: Dict[str, BaseChatMessageHistory] = {}
-        self.lock = Lock()
-        self.max_sessions = max_sessions
-        self.lru: List[str] = []
+    def __init__(self):
+        self.local = threading.local()
 
     def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
-        """获取或创建会话历史，自动清理最久未使用的会话"""
-        with self.lock:
-            # LRU缓存清理
-            while len(self.store) >= self.max_sessions:
-                oldest = self.lru.pop(0)
-                del self.store[oldest]
+        """获取或创建线程本地会话历史"""
+        if not hasattr(self.local, 'store'):
+            self.local.store = {}
+        
+        if session_id not in self.local.store:
+            self.local.store[session_id] = InMemoryChatMessageHistory()
+        
+        return self.local.store[session_id]
 
-            if session_id not in self.store:
-                self.store[session_id] = InMemoryChatMessageHistory()
-                self.lru.append(session_id)
-            else:
-                # 更新LRU顺序
-                self.lru.remove(session_id)
-                self.lru.append(session_id)
-            return self.store[session_id]
-
-history_manager = ChatHistoryManager()
+history_manager = ThreadLocalChatHistoryManager()
 
 class LangChainCosmicTableGenerator:
     def __init__(self, config: ModelConfig):
@@ -114,15 +107,16 @@ class LangChainCosmicTableGenerator:
         config = {"configurable": {"session_id": session_id}}
 
         answer_buffer: List[str] = []
-        #self.chat.callbacks = [self._create_stream_callback(answer_buffer)]
+        self.chat.callbacks = [self._create_stream_callback(answer_buffer)]
 
         for attempt in range(max_chat_count + 1):
             try:
+                logger.info("(线程：%s) 开始调用AI", threading.get_ident())
                 response = with_message_history.invoke(
                     [HumanMessage(content=requirement_content)],
                     config=config,
                 )
-                logger.info("收到AI响应 (长度: %d 字符)", len(response.content))
+                logger.info("收到AI响应 (长度: %d 字符)(线程：%s)", len(response.content),threading.get_ident())
 
                 full_answer = response.content
                 extracted_data = extractor(full_answer)
@@ -143,8 +137,6 @@ class LangChainCosmicTableGenerator:
             except Exception as e:
                 logger.error("生成过程中发生异常：%s", str(e))
                 raise RuntimeError("COSMIC表格生成失败") from e
-            finally:
-                answer_buffer.clear()
 
         return None
 
@@ -161,9 +153,13 @@ class LangChainCosmicTableGenerator:
     def _build_retry_prompt(self, error: str) -> str:
         """构建重试提示模板"""
         return f"""\n上次生成内容未通过验证：{error}
-请根据以下要求重新生成：
-1. 严格遵循COSMIC规范，使用markdown语法输出
-2. 仅修改校验不通过的内容，已通过的内容不再修改按照上个输出版本的内容输出。修改的内容也无需添加备注改了哪里
+        \n
+## 请根据以下要求重新生成：
+
+1.  请严格遵循 **COSMIC 规范** 进行内容组织，并使用 **Markdown 语法** 进行格式化输出。
+2.  在本次生成中，请 **仅修改** 上一版本输出中未能通过校验的部分。对于已经通过校验的部分，请 **保持其内容与上一版本完全一致**，无需进行任何调整。
+3.  对于已修改的内容，**无需** 添加任何关于修改位置或修改内容的备注信息。
+
 """
 
 def call_ai(

@@ -1,4 +1,3 @@
-import time
 from datetime import datetime
 from functools import partial
 import re
@@ -8,7 +7,6 @@ from pathlib import Path
 import logging
 import argparse
 from dataclasses import dataclass
-import threading
 import queue
 
 from ai_common import load_model_config
@@ -191,7 +189,7 @@ def generate_trigger_events(
     return json_data
 
 
-@ai_processor(max_retries=3)
+@ai_processor(max_retries=1)
 def generate_cosmic_table(
         prompt: str,
         base_content: str,
@@ -228,20 +226,23 @@ def generate_cosmic_table(
 
         # 结果队列
         result_queue = queue.Queue()
-        threads = []
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         event_idx = 0
-        # 遍历每个需求
-        for req in cosmic_data["functional_user_requirements"]:
-            requirement_name = req["requirement"]
-            req_events = req["trigger_events"]
+        # 使用线程池管理并发
+        with ThreadPoolExecutor(max_workers=15) as executor:
+            futures = []
+            
+            # 遍历每个需求
+            for req in cosmic_data["functional_user_requirements"]:
+                requirement_name = req["requirement"]
+                req_events = req["trigger_events"]
 
-            # 处理每个触发事件
-            for idx, event in enumerate(req_events):
-                # 创建线程处理事件
-                t = threading.Thread(
-                    target=process_single_event,
-                    args=(
+                # 处理每个触发事件
+                for idx, event in enumerate(req_events):
+                    # 提交任务到线程池
+                    future = executor.submit(
+                        process_single_event,
                         event,
                         requirement_name,
                         request_file,
@@ -252,21 +253,25 @@ def generate_cosmic_table(
                         result_queue,
                         event_idx
                     )
-                )
-                event_idx += 1
-                t.start()
-                threads.append(t)
-                time.sleep(5)  # 添加5秒延迟
+                    futures.append(future)
+                    event_idx += 1
 
-        # 等待所有线程完成
-        for t in threads:
-            t.join()
+            # 等待所有任务完成
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error(f"线程执行出错: {str(e)}")
+
+        # 移除原有的5秒延迟
 
         # 收集结果
         temp_files = []
         while not result_queue.empty():
             temp_files.append(result_queue.get())
 
+        if event_idx != len(temp_files):
+            raise ValueError("部分COSMIC表格生成失败！")
         # 合并临时文件
         full_table = merge_temp_files(temp_files)
 
