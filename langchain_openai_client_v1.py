@@ -3,6 +3,8 @@ import os
 from typing import Callable, Tuple, Any, Dict, List, Optional, TypeVar
 import time
 import threading
+import random
+import json
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
@@ -32,24 +34,40 @@ class ThreadLocalChatHistoryManager:
         self._init_thread_logger()
 
     def _init_thread_logger(self):
-        """初始化线程特定日志"""
+        """初始化线程特定日志，每小时一个日志文件"""
         if not hasattr(self.local, 'logger'):
             logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
             os.makedirs(logs_dir, exist_ok=True)
             
-            thread_id = threading.get_ident()
-            timestamp = time.strftime("%Y%m%d%H%M%S", time.localtime())
-            log_file = os.path.join(logs_dir, f'thread_{thread_id}_{timestamp}.log')
+            # 按小时生成日志文件名
+            hour_timestamp = time.strftime("%Y%m%d%H", time.localtime())
+            log_file = os.path.join(logs_dir, f'app_{hour_timestamp}.log')
             
+            # 创建logger并设置DEBUG级别
+            self.local.logger = logging.getLogger(f'{__name__}.hourly')
+            self.local.logger.setLevel(logging.DEBUG)
+            
+            # 使用TimedRotatingFileHandler确保线程安全写入
             file_handler = logging.FileHandler(log_file)
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s [Thread-%(thread)d] - %(levelname)s - %(message)s'
+            ))
+            self.local.logger.addHandler(file_handler)
+            
+            # 控制台handler保持不变
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.DEBUG)
+            console_handler.setFormatter(logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             ))
+            self.local.logger.addHandler(console_handler)
             
-            self.local.logger = logging.getLogger(f'{__name__}.thread_{thread_id}')
-            self.local.logger.addHandler(file_handler)
-            self.local.logger.propagate = False  # 防止日志传播到根logger
+            # 禁止传播到根logger避免级别被覆盖
+            self.local.logger.propagate = False
+            
+            # 记录线程启动信息
+            self.local.logger.debug(f"线程 {threading.get_ident()} 初始化日志")
 
     def _ensure_logger(self):
         """确保logger已初始化"""
@@ -74,6 +92,35 @@ class ThreadLocalChatHistoryManager:
         except Exception as e:
             base_logger.error(f"处理会话历史时出错: {str(e)}")
             raise
+
+    def get_chat_context(self, session_id: str) -> list:
+        """获取指定session_id的完整聊天上下文
+        
+        Args:
+            session_id: 会话ID
+            
+        Returns:
+            包含所有消息的列表，每个消息为dict格式:
+            {
+                "role": "human|ai|system",
+                "content": str,
+                "timestamp": str
+            }
+        """
+        self._ensure_logger()
+        try:
+            history = self.get_session_history(session_id)
+            messages = []
+            for msg in history.messages:
+                messages.append({
+                    "role": msg.type,  # human/ai/system
+                    "content": msg.content,
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                })
+            return messages
+        except Exception as e:
+            self.local.logger.error(f"获取聊天上下文失败: {str(e)}")
+            return []
 
 history_manager = ThreadLocalChatHistoryManager()
 
@@ -144,33 +191,47 @@ class LangChainCosmicTableGenerator:
             history_manager.get_session_history,
         )
 
-        session_id = f"thread_{threading.get_ident()}"
+        session_id = f"session_{int(time.time())}_{random.randint(1000, 9999)}"
         config = {"configurable": {"session_id": session_id}}
 
-        self.chat.callbacks = [self._create_stream_callback()]
+        #self.chat.callbacks = [self._create_stream_callback()]
 
         for attempt in range(max_chat_count + 1):
             try:
                 try:
                     history_manager._ensure_logger()
-                    history_manager.local.logger.debug("开始调用AI")
+                    history_manager.local.logger.info(f"session_id={session_id} 开始调用AI")
                 except:
-                    base_logger.debug("开始调用AI")
+                    base_logger.info("开始调用AI")
                 response = with_message_history.invoke(
                     [HumanMessage(content=requirement_content)],
                     config=config,
                 )
-                history_manager.local.logger.info("收到AI响应 (长度: %d 字符)", len(response.content))
-                history_manager.local.logger.info("收到AI响应内容 \n%s", response.content)
-
                 full_answer = response.content
-                history_manager.local.logger.debug(f"提取数据 content_length={len(full_answer)}")
+
+                history_manager.local.logger.info("收到AI响应 (长度: %d 字符)", len(full_answer))
+                history_manager.local.logger.info(f"收到AI响应内容 \n%s", full_answer)
+
                 extracted_data = extractor(full_answer)
                 history_manager.local.logger.info(f"开始验证数据")
                 is_valid, error = validator(extracted_data)
  
                 if is_valid:
                     history_manager.local.logger.info(f"本轮AI生成内容校验通过")
+                    # 保存聊天历史
+                    try:
+                        chat_history_dir = os.path.join(os.path.dirname(__file__), 'chat_history')
+                        os.makedirs(chat_history_dir, exist_ok=True)
+                        history_file = os.path.join(chat_history_dir, f'{session_id}.json')
+
+                        chat_context = history_manager.get_chat_context(session_id)
+                        with open(history_file, 'w', encoding='utf-8') as f:
+                            json.dump(chat_context, f, ensure_ascii=False, indent=2)
+                        
+                        history_manager.local.logger.debug(f"聊天历史已保存到: {history_file}")
+                    except Exception as e:
+                        history_manager.local.logger.error(f"保存聊天历史失败: {str(e)}")
+                    
                     return extracted_data
                     
                 if attempt == max_chat_count:
@@ -193,11 +254,15 @@ class LangChainCosmicTableGenerator:
         class StreamCallback(BaseCallbackHandler):
             def __init__(self):
                 self.token_count = 0
+                self.messages = []
 
             def on_llm_new_token(self, token: str, **kwargs) -> None:
-                if self.token_count % 500 == 0:
-                    history_manager.local.logger.debug(f'已处理{self.token_count}个token')
-                self.token_count += 1
+                if token:
+                    self.messages.append(token)
+                    if len(self.messages) > 100:
+                        history_manager.local.logger.debug("".join(self.messages))
+                        self.messages = []
+
 
         return StreamCallback()
 

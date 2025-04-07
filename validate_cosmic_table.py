@@ -30,19 +30,15 @@ def validate_cosmic_table(markdown_table_str: str, request_name: str) -> Tuple[b
                         "子过程描述", "数据移动类型", "数据组", "数据属性", "复用度", "CFP", "ΣCFP"]
 
     FORBIDDEN_KEYWORDS_PROCESS = {
-        "加载", "解析", "初始化", "点击按钮", "页面", "渲染", "保存", "输入",
-        "读取", "获取", "输出", "切换", "计算", "重置", "分页", "排序",
-        "适配", "开发", "部署", "迁移", "安装", "存储", "缓存", "校验",
-        "验证", "是否", "判断"
+        '加载', '解析', '初始化', '点击按钮', '页面', '渲染', '保存', '输入', '读取', '获取', '输出', '切换', '计算',
+        '重置', '分页', '排序', '适配', '开发', '部署', '迁移', '安装', '存储', '缓存', '校验', '验证', '是否', '判断',
+        '异常', '维护', '日志', '组件', '加载', '解析', '初始化', '点击按钮', '页面', '渲染', '保存', '输入', '读取',
+        '获取', '输出', '切换', '计算', '重置', '分页', '排序', '适配', '开发', '部署', '迁移', '安装', '存储', '缓存',
+        '校验', '验证', '是否', '判断', '组件', '检查', '组装报文', '构建报文', '日志保存', '写日志', '配置', '标记',
+        '策略', '调用XX接口'
     }
 
-    FORBIDDEN_KEYWORDS_SUBPROCESS = {
-        "校验", "验证", "检查", "判断", "组装报文", "构建报文", "日志保存",
-        "写日志", "加载", "解析", "初始化", "点击按钮", "页面", "渲染",
-        "保存", "输入", "读取", "获取", "输出", "切换", "计算", "重置",
-        "分页", "排序", "适配", "开发", "部署", "迁移", "安装", "存储",
-        "缓存", "调用XX接口" # 假设 "调用XX接口" 是一个通用模式
-    }
+    FORBIDDEN_KEYWORDS_SUBPROCESS = FORBIDDEN_KEYWORDS_PROCESS
 
     VALID_DATA_MOVE_TYPES = {"E", "X", "R", "W"}
     FUNCTIONAL_USER_REGEX = r"^发起者:\s*.*?\s*接收者：\s*.*$"
@@ -152,6 +148,14 @@ def validate_cosmic_table(markdown_table_str: str, request_name: str) -> Tuple[b
         else:
             if sub_process_cell == process_cell:
                 errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '子过程描述' ({sub_process_cell}) 不能与 '功能过程' 相同。")
+            
+            # 新增规则: 数据移动类型为E时，子过程描述不能以"提交"开头
+            if data_move_type_cell == 'E' and sub_process_cell.startswith('提交'):
+                errors.append(
+                    f"数据行 {data_row_num} (文件行 {file_row_num}): '如果数据移动类型是E，子过程描述' ({sub_process_cell}) 不能以'提交'开头。"
+                    "建议使用'输入'、'传入'、'接收'等词语开头。"
+                )
+            
             for keyword in FORBIDDEN_KEYWORDS_SUBPROCESS:
                 if keyword == "调用XX接口" and "调用" in sub_process_cell and "接口" in sub_process_cell:
                      errors.append(f"数据行 {data_row_num} (文件行 {file_row_num}): '子过程描述' ({sub_process_cell}) 包含禁用模式 '调用XX接口'。")
@@ -244,6 +248,15 @@ def validate_cosmic_table(markdown_table_str: str, request_name: str) -> Tuple[b
 
         # 规则 10 & 11: 数据组和属性逻辑
         is_query = (len(moves) == 3 and moves == ['E', 'R', 'X'])
+
+        # 新增规则: 检查ERW组合
+        if len(moves) >= 3:
+            for i in range(len(moves) - 2):
+                if moves[i] == 'E' and moves[i+1] == 'R' and moves[i+2] == 'W':
+                    errors.append(
+                        f"功能过程 '{process}' (涉及文件行: {file_row_nums}) 包含不允许的 'ERW' 数据移动组合。"
+                        "建议拆分成两个子过程描述: 第一个包含ER(输入-读取), 第二个包含EW(输入-写入)。"
+                    )
 
         if process in process_entry_details and process in process_exit_details:
             entry_group, entry_attrs_tuple = process_entry_details[process]

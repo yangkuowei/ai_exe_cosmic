@@ -1,5 +1,5 @@
 # 默认使用的模型提供商（可选）
-default_provider: 302
+default_provider: nvidia
 
 providers:
   302:
@@ -57,7 +57,7 @@ providers:
       model_name: SILICONFLOW_MODEL
   vllm:
     base_url: http://192.168.3.108:8080/v1/
-    model_name: QwQ-32B-AWQ
+    model_name: Qwen2.5-14B-Instruct-1M
     env_mapping:
       api_key: SILICONFLOW_API_KEY
       base_url: SILICONFLOW_BASE_URL

@@ -95,7 +95,7 @@ def main() -> None:
                         args=(args, config, request_file, requirement_content))
             p.start()
             processes.append(p)
-            time.sleep(3)
+            time.sleep(30)
             
         # 等待所有进程完成
         for p in processes:

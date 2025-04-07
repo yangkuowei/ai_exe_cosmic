@@ -388,83 +388,100 @@ def read_word_document(file_path: str) -> str:
         word.Quit()
         return content
 
-    def process_text(content):
-        """
-        数据清洗
-        删除文本中“业务流程（必填）” 后的内容，并删除特殊字符“”。
-
-        Args:
-            content: 包含文本内容的字符串。
-
-        Returns:
-            处理后的字符串。
-        """
-
-        markers = [
-            "业务流程（必填）",
-            "业务流程图/时序图（如涉及，必填）"
-        ]
-        # 特殊字符 U+FFFD (REPLACEMENT CHARACTER)
-        # 在 Python 字符串中可以直接使用，或者用 Unicode 转义 \uFFFD
-        special_char = "\x01"
-        # 查找所有标记的所有出现位置
-        occurrences = []
-        for marker in markers:
-            start_pos = 0
-            while True:
-                index = content.find(marker, start_pos)
-                if index == -1:
-                    break  # 当前标记在此后的文本中未找到
-                occurrences.append(index)  # 记录找到的位置
-                # 移动搜索起始点到当前找到的标记之后，避免重复查找同一位置
-                start_pos = index + 1  # 加1即可，find会找到第一个字符匹配的位置
-
-        # 对所有找到的位置进行排序
-        occurrences.sort()
-
-        # 初始化 content_to_process 为原始内容
-        content_to_process = content
-        truncation_point = -1  # -1 表示不截断
-
-        # 检查是否有至少两次出现（任意标记组合）
-        if len(occurrences) >= 2:
-            # 第二次出现的位置是排序后列表的第二个元素 (索引为 1)
-            truncation_point = occurrences[1]
-            print(f"在位置 {truncation_point} 找到第 2 个标记（来自列表 {markers}）。")
-            content_to_process = content[:truncation_point]
-        else:
-            print(f"警告：在文件  中找到的标记（来自列表 {markers}）总数少于 2 个。将不执行截断。")
-            # content_to_process 保持为原始内容
-
-        # 删除特殊字符 (无论是否截断，都执行此操作)
-        processed_content = content_to_process.replace(special_char, "")
-        processed_content = processed_content.replace('\x07', "")
-        while processed_content.find('\r\r') > -1:
-            processed_content = processed_content.replace('\r\r', "\r")
-
-            # --- 步骤 3: 删除前三行 ---
-        lines_to_remove = 3
-        lines = processed_content.splitlines(keepends=True)  # 保留换行符以便正确重组
-        final_lines = lines[lines_to_remove:]
-        processed_content = "".join(final_lines)
-        print(f"已删除前 {lines_to_remove} 行。")
-
-        return processed_content
 
     if file_path.endswith('.docx'):
         # 读取 .docx 文件
         doc = Document(file_path)
-        return '\n'.join(paragraph.text for paragraph in doc.paragraphs)
+        content = '\n'.join(paragraph.text for paragraph in doc.paragraphs)
 
     elif file_path.endswith('.doc'):
         # 读取 .doc 文件（依赖 antiword）
         try:
-            return read_doc_file(file_path)
+            content = read_doc_file(file_path)
         except FileNotFoundError:
             raise RuntimeError("读取 .doc 文件需要安装 antiword，请执行：sudo apt-get install antiword")
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"读取失败: {e.stderr}")
-
     else:
         raise ValueError("仅支持 .doc 和 .docx 格式")
 
+    return process_text(content)
+
+
+
+def process_text(content):
+    """
+    数据清洗
+    删除文本中“业务流程（必填）” 后的内容，并删除特殊字符“”。
+
+    Args:
+        content: 包含文本内容的字符串。
+
+    Returns:
+        处理后的字符串。
+    """
+
+    markers = [
+        "业务流程（必填）",
+        "业务流程图/时序图（如涉及，必填）"
+    ]
+    # 特殊字符 U+FFFD (REPLACEMENT CHARACTER)
+    # 在 Python 字符串中可以直接使用，或者用 Unicode 转义 \uFFFD
+    special_char = "\x01"
+    # 查找所有标记的所有出现位置
+    occurrences = []
+    for marker in markers:
+        start_pos = 0
+        while True:
+            index = content.find(marker, start_pos)
+            if index == -1:
+                break  # 当前标记在此后的文本中未找到
+            occurrences.append(index)  # 记录找到的位置
+            # 移动搜索起始点到当前找到的标记之后，避免重复查找同一位置
+            start_pos = index + 1  # 加1即可，find会找到第一个字符匹配的位置
+
+    # 对所有找到的位置进行排序
+    occurrences.sort()
+
+    # 初始化 content_to_process 为原始内容
+    content_to_process = content
+    truncation_point = -1  # -1 表示不截断
+
+    # 检查是否有至少两次出现（任意标记组合）
+    if len(occurrences) >= 2:
+        # 第二次出现的位置是排序后列表的第二个元素 (索引为 1)
+        truncation_point = occurrences[1]
+        #print(f"在位置 {truncation_point} 找到第 2 个标记（来自列表 {markers}）。")
+        content_to_process = content[:truncation_point]
+    else:
+        print(f"警告：在文件  中找到的标记（来自列表 {markers}）总数少于 2 个。将不执行截断。")
+        # content_to_process 保持为原始内容
+
+    # 删除特殊字符 (无论是否截断，都执行此操作)
+    processed_content = content_to_process.replace(special_char, "")
+    processed_content = processed_content.replace('\x07', "")
+    while processed_content.find('\r\r') > -1:
+        processed_content = processed_content.replace('\r\r', "\r")
+
+        # --- 步骤 3: 根据关键词删除行 ---
+    lines = processed_content.splitlines(keepends=True)
+    
+    # 查找第一个"客户需求规格说明书"和第二个"背景描述"的位置
+    start_indices = [i for i, line in enumerate(lines) if "客户需求规格说明书" in line]
+    end_indices = [i for i, line in enumerate(lines) if "背景描述" in line]
+    
+    if len(start_indices) > 0 and len(end_indices) > 1:
+        start_line = start_indices[0]
+        end_line = end_indices[1]  # 取第二个"背景描述"
+        
+        if start_line < end_line:
+            # 保留开始行之前和结束行之后的内容
+            final_lines = lines[:start_line] + lines[end_line:]
+            processed_content = "".join(final_lines)
+            #print(f"已删除从第{start_line+1}行到第{end_line}行的内容")
+        else:
+            print("警告：'客户需求规格说明书'出现在第二个'背景描述'之后，不执行删除")
+    else:
+        print("未找到足够的匹配行，不执行删除操作")
+
+    return processed_content
