@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Callable, Tuple, Any, Dict, List, Optional, TypeVar
 import time
 import threading
@@ -15,12 +16,12 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from ai_common import ModelConfig
 
-# 配置日志
+# 配置基础控制台日志
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+base_logger = logging.getLogger(__name__)
 T = TypeVar('T')
 
 class ThreadLocalChatHistoryManager:
@@ -28,16 +29,50 @@ class ThreadLocalChatHistoryManager:
     
     def __init__(self):
         self.local = threading.local()
+        self._init_thread_logger()
+
+    def _init_thread_logger(self):
+        """初始化线程特定日志"""
+        if not hasattr(self.local, 'logger'):
+            logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
+            os.makedirs(logs_dir, exist_ok=True)
+            
+            thread_id = threading.get_ident()
+            log_file = os.path.join(logs_dir, f'thread_{thread_id}.log')
+            
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            ))
+            
+            self.local.logger = logging.getLogger(f'{__name__}.thread_{thread_id}')
+            self.local.logger.addHandler(file_handler)
+            self.local.logger.propagate = False  # 防止日志传播到根logger
+
+    def _ensure_logger(self):
+        """确保logger已初始化"""
+        if not hasattr(self.local, 'logger'):
+            self._init_thread_logger()
 
     def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
         """获取或创建线程本地会话历史"""
-        if not hasattr(self.local, 'store'):
-            self.local.store = {}
-        
-        if session_id not in self.local.store:
-            self.local.store[session_id] = InMemoryChatMessageHistory()
-        
-        return self.local.store[session_id]
+        self._ensure_logger()
+        try:
+            self.local.logger.info(f"获取会话历史 session_id={session_id}")
+            if not hasattr(self.local, 'store'):
+                self.local.logger.info(f"初始化线程本地存储")
+                self.local.store = {}
+            
+            if session_id not in self.local.store:
+                self.local.logger.info(f"创建新的会话历史 session_id={session_id}")
+                self.local.store[session_id] = InMemoryChatMessageHistory()
+            
+            self.local.logger.info(f"返回会话历史 session_id={session_id}")
+            return self.local.store[session_id]
+        except Exception as e:
+            base_logger.error(f"处理会话历史时出错: {str(e)}")
+            raise
 
 history_manager = ThreadLocalChatHistoryManager()
 
@@ -66,7 +101,11 @@ class LangChainCosmicTableGenerator:
         if config.temperature < 0 or config.temperature > 2:
             raise ValueError("temperature参数需在0-2之间")
         if config.max_tokens < 100:
-            logger.warning("max_tokens值(%d)可能过小", config.max_tokens)
+            try:
+                history_manager._ensure_logger()
+                history_manager.local.logger.warning("max_tokens值(%d)可能过小", config.max_tokens)
+            except:
+                base_logger.warning("max_tokens值(%d)可能过小", config.max_tokens)
 
     def generate_table(
             self,
@@ -77,6 +116,7 @@ class LangChainCosmicTableGenerator:
             max_chat_count: int = 3
     ) -> Optional[T]:
         """生成并验证COSMIC表格内容
+        history_manager.local.logger.info(f"开始生成表格")
         
         Args:
             cosmic_ai_prompt: COSMIC提示模板
@@ -103,50 +143,60 @@ class LangChainCosmicTableGenerator:
             history_manager.get_session_history,
         )
 
-        session_id = f"thread_{threading.get_ident()}_time{time.time()}"
+        session_id = f"thread_{threading.get_ident()}"
         config = {"configurable": {"session_id": session_id}}
 
-        answer_buffer: List[str] = []
-        self.chat.callbacks = [self._create_stream_callback(answer_buffer)]
+        self.chat.callbacks = [self._create_stream_callback()]
 
         for attempt in range(max_chat_count + 1):
             try:
-                logger.info("(线程：%s) 开始调用AI", threading.get_ident())
+                try:
+                    history_manager._ensure_logger()
+                    history_manager.local.logger.info("开始调用AI")
+                except:
+                    base_logger.info("开始调用AI")
                 response = with_message_history.invoke(
                     [HumanMessage(content=requirement_content)],
                     config=config,
                 )
-                logger.info("收到AI响应 (长度: %d 字符)(线程：%s)", len(response.content),threading.get_ident())
+                history_manager.local.logger.info("收到AI响应 (长度: %d 字符)", len(response.content))
+                history_manager.local.logger.info("收到AI响应内容 \n%s", response.content)
 
                 full_answer = response.content
+                history_manager.local.logger.info(f"提取数据 content_length={len(full_answer)}")
                 extracted_data = extractor(full_answer)
+                history_manager.local.logger.info(f"开始验证数据")
                 is_valid, error = validator(extracted_data)
-
+ 
                 if is_valid:
-                    logger.info(f"\n校验通过")
+                    history_manager.local.logger.info(f"校验通过")
                     return extracted_data
                     
                 if attempt == max_chat_count:
-                    logger.error("历史对话次数已达最大次数(%d)", max_chat_count)
+                    history_manager.local.logger.error("历史对话次数已达最大次数(%d)", max_chat_count)
                     raise ValueError(f"验证失败：{error}")
 
                 requirement_content = self._build_retry_prompt(error)
-                logger.info(requirement_content)
-                logger.info("第%d次重试，更新请求内容", attempt+1)
+                history_manager.local.logger.info(f"构建重试提示")
+                history_manager.local.logger.info(requirement_content)
+                history_manager.local.logger.info(f"第{attempt+1}次重试，更新请求内容")
 
             except Exception as e:
-                logger.error("生成过程中发生异常：%s", str(e))
+                history_manager.local.logger.error("生成过程中发生异常：%s", str(e))
                 raise RuntimeError("COSMIC表格生成失败") from e
 
         return None
 
-    def _create_stream_callback(self, buffer: List[str]) -> BaseCallbackHandler:
+    def _create_stream_callback(self) -> BaseCallbackHandler:
         """创建流式回调处理器"""
         class StreamCallback(BaseCallbackHandler):
+            def __init__(self):
+                self.token_count = 0
+
             def on_llm_new_token(self, token: str, **kwargs) -> None:
-                if token:
-                    print(token, end='', flush=True)  # 实时流式输出
-                    buffer.append(token)
+                if self.token_count % 500 == 0:
+                    history_manager.local.logger.info(f'已处理{self.token_count}个token')
+                self.token_count += 1
 
         return StreamCallback()
 

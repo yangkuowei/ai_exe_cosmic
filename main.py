@@ -8,6 +8,7 @@ import logging
 import argparse
 from dataclasses import dataclass
 import queue
+import time
 
 from ai_common import load_model_config
 from langchain_openai_client_v1 import call_ai
@@ -255,6 +256,7 @@ def generate_cosmic_table(
                     )
                     futures.append(future)
                     event_idx += 1
+                    time.sleep(2)  # 添加2秒延迟
 
             # 等待所有任务完成
             for future in as_completed(futures):
