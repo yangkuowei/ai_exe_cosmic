@@ -77,23 +77,38 @@ def main() -> None:
 
         config = ProjectPaths()
 
-        # 读取需求文件（自动获取最新或通过参数指定）
-        txt_files = sorted(
-            config.requirements.glob("*.txt"),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True
-        )
+        # 读取所有需求文件
+        txt_files = list(config.requirements.glob("*.txt"))
         if not txt_files:
             raise FileNotFoundError(f"需求目录中未找到.txt文件: {config.requirements}")
 
-        request_file = txt_files[0]
+        # 使用多进程处理所有需求文件
+        from multiprocessing import Process
+        processes = []
+        
+        for request_file in txt_files:
+            logger.info(f"开始处理需求文件: {request_file}")
+            requirement_content = read_file_content(str(request_file))
+            
+            # 创建新进程处理每个文件
+            p = Process(target=process_single_requirement, 
+                        args=(args, config, request_file, requirement_content))
+            p.start()
+            processes.append(p)
+            time.sleep(3)
+            
+        # 等待所有进程完成
+        for p in processes:
+            p.join()
+        
+        return  # 主进程提前返回
+    except Exception as e:
+        logger.error(f"主进程执行失败: {str(e)}")
+        raise
 
-        if len(txt_files) > 1:
-            logger.warning(f"检测到多个需求文件，已选择最新文件: {request_file.name}")
-
-        logger.info(f"正在使用需求文件: {request_file}")
-        requirement_content = read_file_content(str(request_file))
-
+def process_single_requirement(args, config, request_file, requirement_content):
+    """处理单个需求文件的进程函数"""
+    try:
         # 提取表格行数要求
         total_rows = extract_content_from_requst(requirement_content)
         if total_rows is None:
@@ -104,7 +119,7 @@ def main() -> None:
         if request_name is None:
             raise ValueError(f"需求文件中缺少需求名称: {request_file.name}")
 
-        logger.info(f"成功读取需求文件: {request_file.name}")
+        logger.info(f"正在处理需求文件: {request_file.name}")
 
         json_str = ""
         output_path = config.output / request_file.stem
@@ -113,8 +128,15 @@ def main() -> None:
         run_stage1 = args.stage1 or not args.stage2
         run_stage2 = args.stage2 or not args.stage1
 
-        #run_stage1 = False
-        if run_stage1:
+        # 检查阶段1输出文件是否已存在
+        base_name = request_file.name.split(".")[0]
+        json_file = output_path / f"{base_name}.json"
+        xlsx_file = output_path / f"{base_name}.xlsx"
+
+        if run_stage1 and json_file.exists():
+            logger.info(f"触发事件JSON文件已存在，跳过阶段1: {json_file}")
+            json_str = read_file_content(str(json_file))
+        elif run_stage1:
             # 阶段1：生成触发事件JSON
             json_str = generate_trigger_events(
                 prompt=load_prompt_template(config.trigger_events_template),
@@ -125,13 +147,13 @@ def main() -> None:
             )
         elif run_stage2:
             # 尝试读取已存在的JSON文件
-            base_name = request_file.name.split(".")[0]
-            json_file = output_path / f"{base_name}.json"
             if not json_file.exists():
                 raise FileNotFoundError(f"未找到阶段1输出文件，请先执行阶段1: {json_file}")
             json_str = read_file_content(str(json_file))
 
-        if run_stage2:
+        if run_stage2 and xlsx_file.exists():
+            logger.info(f"Excel表格文件已存在，跳过阶段2: {xlsx_file}")
+        elif run_stage2:
             # 阶段2：生成COSMIC表格
             generate_cosmic_table(
                 prompt=load_prompt_template(config.cosmic_table_template),
@@ -190,7 +212,7 @@ def generate_trigger_events(
     return json_data
 
 
-@ai_processor(max_retries=1)
+@ai_processor(max_retries=3)
 def generate_cosmic_table(
         prompt: str,
         base_content: str,
@@ -231,7 +253,7 @@ def generate_cosmic_table(
 
         event_idx = 0
         # 使用线程池管理并发
-        with ThreadPoolExecutor(max_workers=15) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             futures = []
             
             # 遍历每个需求
@@ -256,7 +278,7 @@ def generate_cosmic_table(
                     )
                     futures.append(future)
                     event_idx += 1
-                    time.sleep(2)  # 添加2秒延迟
+                    time.sleep(10)  # 添加10秒延迟
 
             # 等待所有任务完成
             for future in as_completed(futures):

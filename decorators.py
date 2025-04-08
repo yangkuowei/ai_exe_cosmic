@@ -5,7 +5,7 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-def ai_processor(max_retries: int = 3, initial_delay: float = 10.0, max_delay: float = 3.0):
+def ai_processor(max_retries: int = 3, initial_delay: float = 10.0, max_delay: float = 300.0):
     """AI处理核心装饰器，集成重试、退避、日志和性能监控
     
     Args:

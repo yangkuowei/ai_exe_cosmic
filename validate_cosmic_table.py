@@ -462,7 +462,7 @@ def validate_trigger_event_json(json_str: str, total_rows: int) -> Tuple[bool, s
         "缓存", "接口"  # 避免前后端重复计数 (经验5)
     ]
     # 合并用于检查
-    ALL_FORBIDDEN_KEYWORDS = set(FP_FORBIDDEN_KEYWORDS_ERROR)
+    ALL_FORBIDDEN_KEYWORDS = set(FP_FORBIDDEN_KEYWORDS_ERROR+FP_FORBIDDEN_KEYWORDS_WARN)
 
     # 功能过程(FP)总数估算相关 (基于平均子过程数 2.5 )
     FP_TOTAL_COUNT_FACTOR_MIN = 3.0

@@ -38,7 +38,8 @@ class ThreadLocalChatHistoryManager:
             os.makedirs(logs_dir, exist_ok=True)
             
             thread_id = threading.get_ident()
-            log_file = os.path.join(logs_dir, f'thread_{thread_id}.log')
+            timestamp = time.strftime("%Y%m%d%H%M%S", time.localtime())
+            log_file = os.path.join(logs_dir, f'thread_{thread_id}_{timestamp}.log')
             
             file_handler = logging.FileHandler(log_file)
             file_handler.setLevel(logging.DEBUG)
@@ -59,16 +60,16 @@ class ThreadLocalChatHistoryManager:
         """获取或创建线程本地会话历史"""
         self._ensure_logger()
         try:
-            self.local.logger.info(f"获取会话历史 session_id={session_id}")
+            self.local.logger.debug(f"获取会话历史 session_id={session_id}")
             if not hasattr(self.local, 'store'):
-                self.local.logger.info(f"初始化线程本地存储")
+                self.local.logger.debug(f"初始化线程本地存储")
                 self.local.store = {}
             
             if session_id not in self.local.store:
-                self.local.logger.info(f"创建新的会话历史 session_id={session_id}")
+                self.local.logger.debug(f"创建新的会话历史 session_id={session_id}")
                 self.local.store[session_id] = InMemoryChatMessageHistory()
             
-            self.local.logger.info(f"返回会话历史 session_id={session_id}")
+            self.local.logger.debug(f"返回会话历史 session_id={session_id}")
             return self.local.store[session_id]
         except Exception as e:
             base_logger.error(f"处理会话历史时出错: {str(e)}")
@@ -137,7 +138,7 @@ class LangChainCosmicTableGenerator:
         ])
 
         chain = prompt | self.chat
-        
+
         with_message_history = RunnableWithMessageHistory(
             chain,
             history_manager.get_session_history,
@@ -152,9 +153,9 @@ class LangChainCosmicTableGenerator:
             try:
                 try:
                     history_manager._ensure_logger()
-                    history_manager.local.logger.info("开始调用AI")
+                    history_manager.local.logger.debug("开始调用AI")
                 except:
-                    base_logger.info("开始调用AI")
+                    base_logger.debug("开始调用AI")
                 response = with_message_history.invoke(
                     [HumanMessage(content=requirement_content)],
                     config=config,
@@ -163,13 +164,13 @@ class LangChainCosmicTableGenerator:
                 history_manager.local.logger.info("收到AI响应内容 \n%s", response.content)
 
                 full_answer = response.content
-                history_manager.local.logger.info(f"提取数据 content_length={len(full_answer)}")
+                history_manager.local.logger.debug(f"提取数据 content_length={len(full_answer)}")
                 extracted_data = extractor(full_answer)
                 history_manager.local.logger.info(f"开始验证数据")
                 is_valid, error = validator(extracted_data)
  
                 if is_valid:
-                    history_manager.local.logger.info(f"校验通过")
+                    history_manager.local.logger.info(f"本轮AI生成内容校验通过")
                     return extracted_data
                     
                 if attempt == max_chat_count:
@@ -195,7 +196,7 @@ class LangChainCosmicTableGenerator:
 
             def on_llm_new_token(self, token: str, **kwargs) -> None:
                 if self.token_count % 500 == 0:
-                    history_manager.local.logger.info(f'已处理{self.token_count}个token')
+                    history_manager.local.logger.debug(f'已处理{self.token_count}个token')
                 self.token_count += 1
 
         return StreamCallback()
