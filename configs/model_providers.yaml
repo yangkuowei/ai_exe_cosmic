@@ -1,5 +1,5 @@
 # 默认使用的模型提供商（可选）
-default_provider: nvidia
+default_provider: aliyun
 
 providers:
   302:

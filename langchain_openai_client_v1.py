@@ -190,7 +190,7 @@ class LangChainCosmicTableGenerator:
         """
         # 转义提示词中的大括号
         formatted_prompt = cosmic_ai_prompt.replace("{", "{{").replace("}", "}}")
-        
+
         prompt = ChatPromptTemplate.from_messages([
             ("system", formatted_prompt),
             MessagesPlaceholder(variable_name="messages"),
@@ -271,6 +271,8 @@ class LangChainCosmicTableGenerator:
                 self.token_count += 1
                 if self.token_count % 100 == 0:
                     history_manager.local.logger.debug(f'{session_id}已处理{self.token_count}个token')
+                if token:
+                    print(token, end='')
 
 
 
