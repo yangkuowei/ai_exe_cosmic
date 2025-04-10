@@ -95,7 +95,7 @@ def main() -> None:
                         args=(args, config, request_file, requirement_content))
             p.start()
             processes.append(p)
-            time.sleep(30)
+            time.sleep(5)
             
         # 等待所有进程完成
         for p in processes:
@@ -253,7 +253,7 @@ def generate_cosmic_table(
 
         event_idx = 0
         # 使用线程池管理并发
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=6) as executor:
             futures = []
             
             # 遍历每个需求

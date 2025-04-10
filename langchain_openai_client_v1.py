@@ -33,41 +33,48 @@ class ThreadLocalChatHistoryManager:
         self.local = threading.local()
         self._init_thread_logger()
 
+    _logger_initialized = False
+    _logger_lock = threading.Lock()
+
     def _init_thread_logger(self):
         """初始化线程特定日志，每小时一个日志文件"""
         if not hasattr(self.local, 'logger'):
-            logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
-            os.makedirs(logs_dir, exist_ok=True)
-            
-            # 按小时生成日志文件名
-            hour_timestamp = time.strftime("%Y%m%d%H", time.localtime())
-            log_file = os.path.join(logs_dir, f'app_{hour_timestamp}.log')
-            
-            # 创建logger并设置DEBUG级别
-            self.local.logger = logging.getLogger(f'{__name__}.hourly')
-            self.local.logger.setLevel(logging.DEBUG)
-            
-            # 使用TimedRotatingFileHandler确保线程安全写入
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setLevel(logging.DEBUG)
-            file_handler.setFormatter(logging.Formatter(
-                '%(asctime)s [Thread-%(thread)d] - %(levelname)s - %(message)s'
-            ))
-            self.local.logger.addHandler(file_handler)
-            
-            # 控制台handler保持不变
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(logging.DEBUG)
-            console_handler.setFormatter(logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            ))
-            self.local.logger.addHandler(console_handler)
-            
-            # 禁止传播到根logger避免级别被覆盖
-            self.local.logger.propagate = False
-            
-            # 记录线程启动信息
-            self.local.logger.debug(f"线程 {threading.get_ident()} 初始化日志")
+            with ThreadLocalChatHistoryManager._logger_lock:
+                if not ThreadLocalChatHistoryManager._logger_initialized:
+                    logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
+                    os.makedirs(logs_dir, exist_ok=True)
+                    
+                    # 按小时生成日志文件名
+                    hour_timestamp = time.strftime("%Y%m%d%H", time.localtime())
+                    log_file = os.path.join(logs_dir, f'app_{hour_timestamp}.log')
+                    
+                    # 创建全局logger并设置DEBUG级别
+                    logger = logging.getLogger(f'{__name__}.hourly')
+                    logger.setLevel(logging.DEBUG)
+                    
+                    # 避免重复添加handler
+                    if not logger.handlers:
+                        # 文件handler
+                        file_handler = logging.FileHandler(log_file)
+                        file_handler.setLevel(logging.DEBUG)
+                        file_handler.setFormatter(logging.Formatter(
+                            '%(asctime)s [Thread-%(thread)d] - %(levelname)s - %(message)s'
+                        ))
+                        logger.addHandler(file_handler)
+                        
+                        # 控制台handler
+                        console_handler = logging.StreamHandler()
+                        console_handler.setLevel(logging.DEBUG)
+                        console_handler.setFormatter(logging.Formatter(
+                            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                        ))
+                        logger.addHandler(console_handler)
+                    
+                    logger.propagate = False
+                    ThreadLocalChatHistoryManager._logger_initialized = True
+                
+                self.local.logger = logging.getLogger(f'{__name__}.hourly')
+                self.local.logger.debug(f"线程 {threading.get_ident()} 已连接日志系统")
 
     def _ensure_logger(self):
         """确保logger已初始化"""
@@ -117,6 +124,11 @@ class ThreadLocalChatHistoryManager:
                     "content": msg.content,
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
                 })
+            messages.append({
+                "role": 'human',
+                "content":'校验通过',
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            })
             return messages
         except Exception as e:
             self.local.logger.error(f"获取聊天上下文失败: {str(e)}")
@@ -194,7 +206,7 @@ class LangChainCosmicTableGenerator:
         session_id = f"session_{int(time.time())}_{random.randint(1000, 9999)}"
         config = {"configurable": {"session_id": session_id}}
 
-        #self.chat.callbacks = [self._create_stream_callback()]
+        self.chat.callbacks = [self._create_stream_callback(session_id)]
 
         for attempt in range(max_chat_count + 1):
             try:
@@ -249,19 +261,17 @@ class LangChainCosmicTableGenerator:
 
         return None
 
-    def _create_stream_callback(self) -> BaseCallbackHandler:
+    def _create_stream_callback(self,session_id) -> BaseCallbackHandler:
         """创建流式回调处理器"""
         class StreamCallback(BaseCallbackHandler):
             def __init__(self):
                 self.token_count = 0
-                self.messages = []
 
             def on_llm_new_token(self, token: str, **kwargs) -> None:
-                if token:
-                    self.messages.append(token)
-                    if len(self.messages) > 100:
-                        history_manager.local.logger.debug("".join(self.messages))
-                        self.messages = []
+                self.token_count += 1
+                if self.token_count % 100 == 0:
+                    history_manager.local.logger.debug(f'{session_id}已处理{self.token_count}个token')
+
 
 
         return StreamCallback()

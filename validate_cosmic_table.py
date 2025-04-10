@@ -417,13 +417,50 @@ def extract_table_from_text(text: str) -> str:
 
 def extract_json_from_text(text: str) -> str:
     """
-    AI大模型回答输出的内容除了表格有可能还包含其它字符描述，这个方法专门提取JSON。
+    从AI回复内容中提取最后一个有效的JSON字符串。
+    处理可能包含多个JSON块和注释的情况，只返回最后一个完整的JSON。
+    
+    Args:
+        text: 包含JSON的文本内容
+        
+    Returns:
+        最后一个有效的JSON字符串
+        
+    Raises:
+        ValueError: 如果找不到有效的JSON
     """
-    json_match = re.search(r'\{.*\}', text, re.DOTALL)
-    json_str = json_match.group(0)
-    data = json.loads(json_str)
-
-    return json_str
+    # 匹配所有可能的JSON块
+    json_matches = []
+    stack = []
+    start_index = -1
+    
+    # 手动查找JSON块
+    for i, char in enumerate(text):
+        if char == '{':
+            if not stack:
+                start_index = i
+            stack.append(char)
+        elif char == '}':
+            if stack:
+                stack.pop()
+                if not stack and start_index != -1:
+                    json_matches.append((start_index, i+1))
+                    start_index = -1
+    
+    if not json_matches:
+        raise ValueError("文本中未找到JSON内容")
+    
+    # 从后向前查找第一个有效的JSON
+    for start, end in reversed(json_matches):
+        json_str = text[start:end]
+        try:
+            # 验证JSON是否有效
+            json.loads(json_str)
+            return json_str
+        except json.JSONDecodeError:
+            continue
+    
+    raise ValueError("文本中未找到有效的JSON内容")
 
 
 def validate_all_done(current_answer_content):
