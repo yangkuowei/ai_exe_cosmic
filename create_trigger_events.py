@@ -28,9 +28,12 @@ def process_single_file(json_file: Path, prompt: str, output_base: Path) -> Path
         
         # 检查输出文件是否已存在
         parts = json_file.stem.split('_part')
-        req_name = parts[0].replace('processed_req_analysis_', '')
-        output_path = output_base / req_name
-        output_file = output_path / f"{ProjectPaths.TRIGGER_EVENT_PREFIX}{req_name}_{parts[1]}.json"
+        req_base = parts[0].replace('processed_req_analysis_', '')
+        # 从文件路径中提取开发人员姓名
+        dev_name = json_file.parent.parent.name
+        req_name = f"{dev_name}/{req_base}"
+        output_path = output_base / dev_name / req_base
+        output_file = output_path / f"{ProjectPaths.TRIGGER_EVENT_PREFIX}{req_base}_{parts[1]}.json"
         
         if output_file.exists():
             logger.info(f"触发事件文件已存在，跳过处理: {output_file}")
@@ -39,16 +42,24 @@ def process_single_file(json_file: Path, prompt: str, output_base: Path) -> Path
         with open(json_file, 'r', encoding='utf-8') as f:
             content = json.load(f)
         
-        # 将JSON对象转为字符串
+        # 将JSON对象转为字符串，处理Path对象
+        def convert_paths(obj):
+            if isinstance(obj, Path):
+                return str(obj)
+            elif isinstance(obj, dict):
+                return {k: convert_paths(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_paths(v) for v in obj]
+            return obj
+            
+        content = convert_paths(content)
         content_str = json.dumps(content, ensure_ascii=False)
         
         # 获取tableRows值作为total_rows
         total_rows = content['functionalPoints'][0].get('tableRows', 0)
         
         # 读取业务需求文本
-        parts = json_file.stem.split('_part')
-        req_name = parts[0].replace('processed_req_analysis_', '')
-        business_file = json_file.parent / f"business_req_analysis_{req_name}.txt"
+        business_file = json_file.parent / f"business_req_analysis_{req_base}.txt"
         business_content = read_file_content(str(business_file))
         
         # 合并业务需求文本和JSON内容
@@ -63,13 +74,9 @@ def process_single_file(json_file: Path, prompt: str, output_base: Path) -> Path
             config=load_model_config()
         )
         
-        # 从路径中提取原始需求文件名
-        parts = json_file.stem.split('_part')
-        req_name = parts[0].replace('processed_req_analysis_', '')
-        output_path = output_base / req_name
-        
+        # 使用之前提取的路径信息
         save_content_to_file(
-            file_name=f"{ProjectPaths.TRIGGER_EVENT_PREFIX}{req_name}_{parts[1]}.json",
+            file_name=f"{ProjectPaths.TRIGGER_EVENT_PREFIX}{req_base}_{parts[1]}.json",
             output_dir=str(output_path),
             content=json_data,
             content_type="json"
@@ -80,27 +87,34 @@ def process_single_file(json_file: Path, prompt: str, output_base: Path) -> Path
         logger.error(f"处理文件失败 {json_file}: {str(e)}")
         raise
 
-def create_trigger_events():
-    """主处理流程"""
+def create_trigger_events(req_name: str = None):
+    """主处理流程
+    Args:
+        req_name: 需求名称，用于指定要处理的需求目录
+    """
     try:
         config = ProjectPaths()
         prompt_path = config.ai_promote / "create_trigger_events.md"
         prompt = read_file_content(str(prompt_path))
         
-        # 查找所有拆分后的子JSON文件
-        json_files = list(config.output.glob("**/processed_req_analysis_*_part*.json"))
+        # 查找指定需求目录下的子JSON文件
+        if req_name is None:
+            raise FileNotFoundError(f"create_trigger_events没有输入需求名称req_name")
+        else:
+            # 查找指定需求目录下的文件
+            json_files = list((config.output / req_name).glob("processed_req_analysis_*_part*.json"))
         if not json_files:
             raise FileNotFoundError(f"未找到预处理后的JSON文件: {config.output}")
         
         # 使用线程池处理，添加限流控制
-        max_concurrent = 6  # 最大并发数
+        max_concurrent = 1  # 最大并发数
         request_interval = 1  # 请求间隔(秒)
         
         with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
             futures = {}
             for i, f in enumerate(json_files):
                 # 添加请求间隔
-                if i > 0 and i % max_concurrent == 0:
+                if i > 0 :
                     time.sleep(request_interval)
                 
                 future = executor.submit(process_single_file, f, prompt, config.output)
@@ -116,6 +130,3 @@ def create_trigger_events():
     except Exception as e:
         logger.error(f"触发事件创建失败: {str(e)}")
         raise
-
-if __name__ == "__main__":
-    create_trigger_events()

@@ -1,4 +1,5 @@
 """需求分析模块 - 读取需求文档并调用AI进行分析"""
+import json
 from pathlib import Path
 import logging
 from typing import Tuple, Any
@@ -6,6 +7,7 @@ from typing import Tuple, Any
 from ai_common import load_model_config
 from langchain_openai_client_v1 import call_ai
 from read_file_content import read_file_content, save_content_to_file, read_word_document
+from requirement_extraction import empty_validator
 from validate_cosmic_table import extract_json_from_text
 
 # 配置日志
@@ -33,12 +35,31 @@ def extract_markdown_from_text(text: str) -> str:
     
     return text[start:end].strip()
 
-def empty_validator(data: Any) -> Tuple[bool, str]:
-    """空校验器，总是返回验证通过"""
-    return True, ""
+def requirement_analysis_validator(data: Any) -> Tuple[bool, str]:
+    """校验需求分析结果
+    校验规则:
+    1. 功能用户的发起者和接收者不能相同
+    """
+    try:
+        if isinstance(data, str):
+            data = json.loads(data)
+            
+        # 检查功能用户
+        if 'functionalPoints' in data:
+            for fp in data['functionalPoints']:
+                if 'initiator' in fp and 'receiver' in fp:
+                    if fp['initiator'] == fp['receiver']:
+                        return False, f"功能用户发起者和接收者不能相同: {fp['initiator']}"
+        
+        return True, ""
+    except Exception as e:
+        return False, f"校验失败: {str(e)}"
 
-def analyze_requirements():
-    """主分析流程"""
+def analyze_requirements(req_name: str = None):
+    """主分析流程
+    Args:
+        req_name: 需求名称，用于指定要处理的需求文件
+    """
     try:
         config = ProjectPaths()
         
@@ -46,13 +67,38 @@ def analyze_requirements():
         prompt_path = config.ai_promote / "requirement_analysis.md"
         prompt = read_file_content(str(prompt_path))
         
-        # 2. 读取所有需求文件
-        doc_files = list(config.requirements.glob("*.doc")) + list(config.requirements.glob("*.docx"))
-        if not doc_files:
-            raise FileNotFoundError(f"需求目录中未找到.doc或.docx文件: {config.requirements}")
+        # 2. 读取需求文件
+        if req_name is None:
+            # 处理所有开发人员目录下的需求文件
+            dev_dirs = [d for d in config.requirements.iterdir() if d.is_dir()]
+            doc_files = []
+            for dev_dir in dev_dirs:
+                doc_files.extend(list(dev_dir.glob("*.doc")) + list(dev_dir.glob("*.docx")))
+            if not doc_files:
+                raise FileNotFoundError(f"需求目录中未找到.doc或.docx文件: {config.requirements}")
+        else:
+            # 处理指定需求文件（格式为"开发人员/需求名称"）
+            if "/" not in req_name:
+                raise ValueError("req_name格式应为'开发人员/需求名称'")
+                
+            dev_name, req_base = req_name.split("/", 1)
+            dev_dir = config.requirements / dev_name
+            doc_files = [dev_dir / f"{req_base}.doc", dev_dir / f"{req_base}.docx"]
+            doc_files = [f for f in doc_files if f.exists()]
+            if not doc_files:
+                raise FileNotFoundError(f"未找到指定需求文件: {req_name}")
         
-        # 3. 处理每个需求文件
+        # 3. 处理需求文件
         for request_file in doc_files:
+            dev_name = request_file.parent.name
+            output_path = config.output / dev_name / request_file.stem
+            raw_file = output_path / f"{ProjectPaths.REQUIREMENT_PREFIX}{request_file.stem}.json"
+            
+            # 检查是否已处理过
+            if raw_file.exists():
+                logger.info(f"跳过已处理的需求文件: {request_file.name}")
+                continue
+                
             logger.info(f"开始处理需求文件: {request_file.name}")
             
             # 读取需求内容
@@ -63,13 +109,13 @@ def analyze_requirements():
                 ai_prompt=prompt,
                 requirement_content=content,
                 extractor=extract_json_from_text,
-                validator=empty_validator,
-                max_chat_count=1,
+                validator=requirement_analysis_validator,
+                max_chat_count=3,
                 config=load_model_config()
             )
             
             # 预处理并保存结果
-            output_path = config.output / request_file.stem
+            output_path = config.output / dev_name / request_file.stem
             output_path.mkdir(parents=True, exist_ok=True)
             
             # 原始文件路径
@@ -117,6 +163,3 @@ def analyze_requirements():
     except Exception as e:
         logger.error(f"需求分析失败: {str(e)}")
         raise
-
-if __name__ == "__main__":
-    analyze_requirements()

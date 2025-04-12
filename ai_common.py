@@ -109,7 +109,7 @@ def load_model_config(provider: str = None, config_dir: str = None) -> ModelConf
             model_name=model_name,
             api_key=api_key,
             temperature=provider_config.get('temperature', 0.25),
-            max_tokens=provider_config.get('max_tokens', 8192),
+            max_tokens=provider_config.get('max_tokens', 8000),
             timeout=provider_config.get('timeout', 60.0),
             max_retries=provider_config.get('max_chat_count', 3)
         )
