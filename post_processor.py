@@ -153,7 +153,8 @@ def run_post_processing(req_name: str, config: ProjectPaths, dev_name: str, req_
             # 7. Fill template Excel
             logger.info(f"[{req_name}] 阶段 7: 开始使用生成的 Excel 填充模板...")
             source_excel_for_template = output_dir_for_req / f"{req_base}.xlsx"
-            template_excel = config.requirements / "template" / "template.xlsx"
+            template_excel = config.base_dir / "out_template" / "template.xlsx"
+            template_word = config.base_dir / "out_template" / "template.docx"
             final_excel_output = output_dir_for_req / f"{req_base}_COSMIC.xlsx"
 
             # Parse analysis file

@@ -9,7 +9,7 @@ with open(json_file_path, 'r', encoding='utf-8') as f:
     data = json.load(f)
 
 # 2. 加载 Word 模板
-template_path = 'C:\\Users\\yangkw\\git_rep\\pythonProject\\requirements\\template\\template.docx' # 你的 Word 模板路径
+template_path = '/out_template/template.docx'  # 你的 Word 模板路径
 doc = DocxTemplate(template_path)
 
 # 3. 准备上下文数据 (将 JSON 数据映射到模板变量)
