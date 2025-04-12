@@ -68,7 +68,7 @@ def process_single_event(
     
     # 调用AI生成表格
     validator = partial(validate_cosmic_table, expected_total_rows=table_rows)
-    markdown_table = ai_processor(max_retries=3)(
+    markdown_table = ai_processor()(
         call_ai
     )(
         ai_prompt=ai_prompt,

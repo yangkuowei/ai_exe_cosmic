@@ -66,7 +66,7 @@ def process_single_file(json_file: Path, prompt: str, output_base: Path) -> Path
         # 合并业务需求文本和JSON内容
         combined_content = f"完整业务需求:\n{business_content}\n\n本次需要生成的功能点：\n{content_str}"
         
-        json_data = ai_processor(max_retries=5)(
+        json_data = ai_processor()(
             call_ai
         )(
             ai_prompt=prompt,
