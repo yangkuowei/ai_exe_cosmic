@@ -7,6 +7,8 @@ import subprocess
 import os
 
 from ai_common import load_model_config
+from create_req_word import generate_word_document
+# from create_req_word import generate_word_document # 已在之前导入
 from langchain_openai_client_v1 import call_ai
 from read_file_content import read_file_content, save_content_to_file, read_word_document
 from requirement_extraction import empty_validator
@@ -328,6 +330,40 @@ def analyze_requirements(req_name: str = None):
                     logger.warning(f"跳过架构图生成，因为需求描述未能成功生成或保存 for {request_stem}")
 
                 logger.info(f"需求文件处理完成: {request_file.name}")
+
+                # 步骤 6: 生成最终 Word 文档
+                final_word_path = output_path / f"{request_stem}-需求说明书.docx" # Correct final word path
+                logger.info("--- 步骤 6: 生成最终 Word 文档 ---")
+                template_file_path = config.base_dir / 'out_template' / 'template.docx'  # Correct template path
+                if desc_json_path and desc_json_path.exists() and template_file_path.exists():
+                    # 动态查找架构图图片路径
+                    img_path_for_word = None
+                    # 构建精确的文件名进行查找
+                    expected_diagram_filename = f"{request_stem}_architecture_diagram.png"
+                    expected_diagram_path = output_path / expected_diagram_filename
+                    if expected_diagram_path.exists():
+                        img_path_for_word = str(expected_diagram_path)
+                        logger.info(f"找到架构图图片: {img_path_for_word}")
+                    else:
+                        logger.warning(f"在目录 {output_path} 中未找到预期的架构图文件: {expected_diagram_filename}")
+
+                    if not img_path_for_word:
+                        logger.warning(f"无法找到架构图图片，Word 文档将不包含图片。")
+
+                    success = generate_word_document(
+                        requirement_name=request_stem,
+                        json_data_path=str(desc_json_path),  # 使用需求描述 JSON
+                        template_path=str(template_file_path),
+                        output_doc_path=str(final_word_path),  # Use corrected path
+                        image_path=img_path_for_word,  # 传递找到的路径或 None
+                        image_placeholder='sequence_diagram_mermaid'  # 与 create_req_word.py 中一致
+                        # image_width_cm=15 # 可选：设置宽度
+                    )
+                if success:
+                    logger.info(f"最终 Word 文档生成成功: {final_word_path}")
+                else:
+                    logger.error(f"最终 Word 文档生成失败 for {request_stem}")
+
 
             except Exception as file_proc_err:
                 logger.error(f"处理文件 {request_file.name} 时出错: {file_proc_err}", exc_info=True)
