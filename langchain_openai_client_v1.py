@@ -218,7 +218,7 @@ class LangChainCosmicTableGenerator:
         session_id = f"session_{int(time.time())}_{random.randint(10000, 99999)}"
         config = {"configurable": {"session_id": session_id}}
 
-        self.chat.callbacks = [self._create_stream_callback(session_id)]
+        #self.chat.callbacks = [self._create_stream_callback(session_id)]
 
         for attempt in range(max_chat_count + 1):
             try:
@@ -324,7 +324,7 @@ def call_ai(
         extractor: Callable[[str], Any],
         validator: Callable[[Any], Tuple[bool, str]],
         config: ModelConfig,
-        max_chat_count: int = 8
+        max_chat_count: int = 5
 ) -> str:
     """调用AI生成表格的统一入口
     

@@ -8,9 +8,14 @@ from pathlib import Path
 
 from ai_common import load_model_config
 from langchain_openai_client_v1 import call_ai
+from decorators import ai_processor
 from project_paths import ProjectPaths
 from validate_cosmic_table import validate_cosmic_table, extract_table_from_text
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging # 导入日志模块
+
+# 获取 logger 实例 (确保日志已在别处配置，例如 orchestrator.py)
+logger = logging.getLogger(__name__)
 
 def read_prompt_file(prompt_path: str) -> str:
     """读取AI提示词文件"""
@@ -63,11 +68,14 @@ def process_single_event(
     
     # 调用AI生成表格
     validator = partial(validate_cosmic_table, expected_total_rows=table_rows)
-    markdown_table = call_ai(
+    markdown_table = ai_processor(max_retries=3)(
+        call_ai
+    )(
         ai_prompt=ai_prompt,
         requirement_content=combined_content,
         extractor=extract_table_from_text,
         validator=validator,
+        max_chat_count = 8,
         config=load_model_config()
     )
     
@@ -78,7 +86,7 @@ def process_single_event(
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(markdown_table)
 
-def main(req_name: str = None):
+def create_cosmic_table(req_name: str = None):
     """主处理流程
     Args:
         req_name: 需求名称，用于指定要处理的需求目录
@@ -97,8 +105,15 @@ def main(req_name: str = None):
     else:
         output_dir = config.output / req_name
         business_req_path = output_dir / f"business_req_analysis_{req_name}.txt"
-    
-    # 检查文件是否存在
+        req_base = req_name # Define req_base here
+
+    # 检查最终合并文件是否已存在，如果存在则跳过
+    merged_file_path = output_dir / f"{req_base}_cosmic_merged.md"
+    if merged_file_path.exists():
+        logger.info(f"[{req_name}] 最终合并文件 {merged_file_path} 已存在，跳过 COSMIC 表生成步骤。")
+        return # 直接返回，跳过后续处理
+
+    # 检查业务需求文件是否存在
     if not business_req_path.exists():
         raise FileNotFoundError(f"业务需求文件不存在: {business_req_path}")
     

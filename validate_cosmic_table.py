@@ -11,8 +11,21 @@ import re
 from typing import List, Dict, Tuple, Set
 from typing import Tuple
 
+# 严格禁止的关键字
+FORBIDDEN_KEYWORDS_ERROR = ["校验", "验证", "判断", "是否", "日志", "组装", "构建", "切换", "计算", "重置", "分页",
+                            "排序", "适配", "开发", "部署", "迁移", "安装", "缓存", "接口"'异常', '维护', '组件',
+                            '检查', '组装报文', '构建报文', '日志保存', '写日志', '标记', '策略', '调用XX接口',
+                            '调用接口', '执行SQL', '数据适配', '获取数据', '输入密码', '读取配置', '保存设置',
+                            '切换状态', '计算总和',"加载", "解析", "初始化", "点击", "按钮", "页面", "渲染",]
+#带条件的
+FORBIDDEN_KEYWORDS_WARN = [
+    "保存",  # 除非 数据移动类型是 W
+    "输入",  # 除非 数据移动类型是 E
+    "读取",  # 除非 数据移动类型是 R
+    "输出",  # 除非 数据移动类型是 X
+    "存储",  # 除非 数据移动类型是 W
+]
 
-# 假设 markdown_table_to_list 函数已经定义
 
 def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> Tuple[bool, str]:
     """
@@ -31,14 +44,12 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
     # --- 常量定义 (根据新Prompt更新) ---
     EXPECTED_HEADERS = ["功能用户", "功能用户需求", "触发事件", "功能过程",
                         "子过程描述", "数据移动类型", "数据组", "数据属性"]
-    FORBIDDEN_KEYWORDS_PROCESS = {
-        '加载', '解析', '初始化', '点击按钮', '页面', '渲染', '输入', '输出', '切换', '计算',
-        '重置', '分页', '排序', '适配', '开发', '部署', '迁移', '安装', '存储', '缓存', '校验', '验证', '是否', '判断',
-        '异常', '维护', '日志', '组件', '检查', '组装报文', '构建报文', '日志保存', '写日志', '标记',
-        '策略', '调用XX接口', '调用接口', '执行SQL', '数据适配', '获取数据', '输入密码', '读取配置', '保存设置',
-        '切换状态', '计算总和'
-    }
-    FORBIDDEN_KEYWORDS_SUBPROCESS = FORBIDDEN_KEYWORDS_PROCESS
+    FORBIDDEN_KEYWORDS_PROCESS = FORBIDDEN_KEYWORDS_ERROR
+
+    FORBIDDEN_KEYWORDS_SUBPROCESS = FORBIDDEN_KEYWORDS_ERROR
+
+    KEYWORDS_WARN_SUBPROCESS = FORBIDDEN_KEYWORDS_WARN
+
     VALID_DATA_MOVE_TYPES = {"E", "X", "R", "W"}
     FUNCTIONAL_USER_REGEX = r"^发起者:\s*.*?\s*接收者：\s*.*$"
     DATA_ATTRIBUTE_REGEX = r"^[\u4e00-\u9fa5\s,，]+$"
@@ -143,7 +154,7 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
                 seen_row = seen_sub_processes[sub_process_cell]
                 errors.append(
                     f"子过程描述重复：行 {data_row_num} 的子过程描述 '{sub_process_cell}' "
-                    f"与行 {seen_row['_data_row_num']} 的子过程描述重复")
+                    f"与行 {seen_row['_data_row_num']} 的子过程描述重复，请从新生成行 {data_row_num} 的子过程描述 '{sub_process_cell}。")
             else:
                 seen_sub_processes[sub_process_cell] = row
             # 检查禁用关键字
@@ -154,6 +165,17 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
                 elif keyword != "调用XX接口" and keyword in sub_process_cell:
                     errors.append(
                         f"数据行 {data_row_num} (文件行 {file_row_num}): '子过程描述' ({sub_process_cell}) 包含禁用关键字 '{keyword}'。")
+
+            # 检查带条件的关键字
+            for keyword in KEYWORDS_WARN_SUBPROCESS:
+                if keyword in sub_process_cell:
+                    if (keyword in ["保存", "存储"] and data_move_type_cell != "W") or \
+                       (keyword == "输入" and data_move_type_cell != "E") or \
+                       (keyword == "读取" and data_move_type_cell != "R") or \
+                       (keyword == "输出" and data_move_type_cell != "X"):
+                        errors.append(
+                            f"数据行 {data_row_num} (文件行 {file_row_num}): '子过程描述' ({sub_process_cell}) 包含关键字 '{keyword}' 但数据移动类型为 '{data_move_type_cell}'，应为 " +
+                            ("'W'" if keyword in ["保存", "存储"] else "'E'" if keyword == "输入" else "'R'" if keyword == "读取" else "'X'"))
 
         # 规则 8: 数据移动类型
         if data_move_type_cell not in VALID_DATA_MOVE_TYPES:
@@ -171,13 +193,13 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
             if not re.fullmatch(DATA_ATTRIBUTE_REGEX, data_attributes_str_cell):
                 invalid_chars = "".join(sorted(list(set(re.sub(r'[\u4e00-\u9fa5\s,，]', '', data_attributes_str_cell)))))
                 errors.append(
-                    f"数据行 {data_row_num} (文件行 {file_row_num}): '数据属性' ({data_attributes_str_cell}) 包含非中文、逗号或空格的字符 。")
+                    f"数据行 {data_row_num} (文件行 {file_row_num}): '数据属性' ({data_attributes_str_cell}) 包含非中文字符 。应该全部使用中文描述，（如用“客户姓名”而非“custName”或“CUST_NAME”，用“客户编号”而非“客户ID”或“cust_id”）")
             else:
                 attributes = [attr.strip() for attr in re.split(DATA_ATTRIBUTE_SPLIT_REGEX, data_attributes_str_cell) if
                               attr.strip()]
-                if not (3 <= len(attributes) <= 15):
+                if not (2 <= len(attributes) <= 15):
                     errors.append(
-                        f"数据行 {data_row_num} (文件行 {file_row_num}): '数据属性' 数量为 {len(attributes)}，应在 3 到 15 个之间。属性列表: {attributes}")
+                        f"数据行 {data_row_num} (文件行 {file_row_num}): '数据属性' 数量为 {len(attributes)}，应在 2 到 15 个之间。属性列表: {attributes}")
 
                 attributes_tuple = tuple(sorted(attributes))
                 all_data_attributes_tuples.add(attributes_tuple)
@@ -203,20 +225,16 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
 
     # --- 跨行校验 ---
     # 1. 检查重复的数据属性
-    if len(all_data_attributes_tuples) < len(table_data):
-        # 找到重复的数据属性组合
-        seen_attributes = {}
-        for i, row in enumerate(table_data):
-            attributes = tuple(sorted([attr.strip() for attr in 
-                re.split(DATA_ATTRIBUTE_SPLIT_REGEX, row["数据属性"]) if attr.strip()]))
-            if attributes in seen_attributes:
-                seen_row = seen_attributes[attributes]
-                errors.append(
-                    f"数据属性重复：行 {row['_data_row_num']} 的数据属性 '{row['数据属性']}' "
-                    f"与行 {seen_row['_data_row_num']} 的数据属性 '{seen_row['数据属性']}' 重复，可以增加属性个数，或者加不同的前缀来消除重复")
-            else:
-                seen_attributes[attributes] = row
-
+    seen_attributes = {}
+    for i, row in enumerate(table_data):
+        attributes_str = row["数据属性"]
+        if attributes_str in seen_attributes:
+            seen_row = seen_attributes[attributes_str]
+            errors.append(
+                f"数据属性重复：行 {row['_data_row_num']} 的数据属性 '{attributes_str}' "
+                f"与行 {seen_row['_data_row_num']} 的数据属性 '{seen_row['数据属性']}' 完全重复，请更改行 {row['_data_row_num']} 的数据属性 '{attributes_str}'")
+        else:
+            seen_attributes[attributes_str] = row
 
     for process, rows in process_rows.items():
         rows.sort(key=lambda r: r['_file_row_num'])
@@ -240,7 +258,6 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
                     errors.append(
                         f"功能过程 '{process}' (涉及文件行: {file_row_nums[i]} 到 {file_row_nums[i + 2]}) 包含不允许的 'ERW' 数据移动组合。应该拆成ERX组合，并修改对应的子过程描述"
                     )
-
 
     # --- 返回结果 ---
     final_errors = sorted(list(set(errors)))
@@ -457,25 +474,9 @@ def validate_trigger_event_json(json_str: str, total_rows: int) -> Tuple[bool, s
     TE_MAX_FP = 6
 
     # 功能过程(FP)规则
-    # 严格禁止的关键字
-    FP_FORBIDDEN_KEYWORDS_ERROR = ["校验", "验证", "判断", "是否", "日志", "组装", "构建"]
-    # 建议避免的关键字 (技术/实现细节, 来自规则4, 经验8)
-    FP_FORBIDDEN_KEYWORDS_WARN = [
-        "加载", "解析", "初始化", "点击", "按钮", "页面", "渲染",
-        "保存",  # 除非 数据移动类型是 W
-        "输入",  # 除非 数据移动类型是 E
-        "读取",  # 除非 数据移动类型是 R
-        "输出",  # 除非 数据移动类型是 X
-        "存储",  # 除非 数据移动类型是 W
-        "切换", "计算", "重置", "分页", "排序", "适配",
-        "开发", "部署", "迁移", "安装",
-        "缓存", "接口"  
-        '异常', '维护',  '组件', '检查', '组装报文', '构建报文', '日志保存', '写日志', '标记',
-        '策略', '调用XX接口', '调用接口', '执行SQL', '数据适配', '获取数据', '输入密码', '读取配置', '保存设置',
-        '切换状态', '计算总和'
-    ]
+
     # 合并用于检查
-    ALL_FORBIDDEN_KEYWORDS = set(FP_FORBIDDEN_KEYWORDS_ERROR + FP_FORBIDDEN_KEYWORDS_WARN)
+    ALL_FORBIDDEN_KEYWORDS = set(FORBIDDEN_KEYWORDS_ERROR + FORBIDDEN_KEYWORDS_WARN)
 
     # 功能过程(FP)总数估算相关 (基于平均子过程数 2.5 )
     FP_TOTAL_COUNT_FACTOR_MIN = 3.0
@@ -578,7 +579,7 @@ def validate_trigger_event_json(json_str: str, total_rows: int) -> Tuple[bool, s
                 found_forbidden = []
                 for keyword in ALL_FORBIDDEN_KEYWORDS:
                     if keyword in process:
-                        level = "错误" if keyword in FP_FORBIDDEN_KEYWORDS_ERROR else "警告"
+                        level = "错误" if keyword in FORBIDDEN_KEYWORDS_ERROR else "警告"
                         found_forbidden.append(
                             f"{level}: 功能过程 '{process}' ({process_path}) 包含禁用/不推荐关键字 '{keyword}'")
                 if found_forbidden:

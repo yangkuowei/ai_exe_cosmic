@@ -7,6 +7,7 @@ from typing import Tuple, Any
 
 from ai_common import load_model_config
 from langchain_openai_client_v1 import call_ai
+from decorators import ai_processor
 from read_file_content import read_file_content, save_content_to_file
 from validate_cosmic_table import extract_json_from_text, validate_trigger_event_json
 from project_paths import ProjectPaths
@@ -65,7 +66,9 @@ def process_single_file(json_file: Path, prompt: str, output_base: Path) -> Path
         # 合并业务需求文本和JSON内容
         combined_content = f"完整业务需求:\n{business_content}\n\n本次需要生成的功能点：\n{content_str}"
         
-        json_data = call_ai(
+        json_data = ai_processor(max_retries=5)(
+            call_ai
+        )(
             ai_prompt=prompt,
             requirement_content=combined_content,
             extractor=extract_json_from_text,
@@ -107,7 +110,7 @@ def create_trigger_events(req_name: str = None):
             raise FileNotFoundError(f"未找到预处理后的JSON文件: {config.output}")
         
         # 使用线程池处理，添加限流控制
-        max_concurrent = 1  # 最大并发数
+        max_concurrent = 12  # 最大并发数
         request_interval = 1  # 请求间隔(秒)
         
         with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
