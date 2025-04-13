@@ -83,12 +83,16 @@ def replace_placeholder_with_image(doc_path, placeholder_text, image_path, width
         return False
 
 
-def generate_word_document(requirement_name:str,json_data_path: str, template_path: str, output_doc_path: str, image_path: Optional[str] = None, image_placeholder: str = 'sequence_diagram_mermaid', image_width_cm: Optional[float] = None):
+def generate_word_document(requirement_name:str, json_data_path: str, template_path: str, output_doc_path: str, word_text: Optional[str] = None, image_path: Optional[str] = None, image_placeholder: str = 'sequence_diagram_mermaid', image_width_cm: Optional[float] = None):
     """
-    使用 JSON 数据和模板生成 Word 文档，并可选地插入图片。
+    使用 JSON 数据和模板生成 Word 文档，并可选地插入图片和文本。
 
     Args:
+        requirement_name (str): 需求名称 (用于填充模板)。
         json_data_path (str): 输入的 JSON 数据文件路径。
+        template_path (str): Word 模板文件路径 (.docx)。
+        output_doc_path (str): 输出的 Word 文档文件路径。
+        word_text (Optional[str]): 要填充到 {{word_text}} 占位符的文本内容 (例如，合并的 Markdown)。
         template_path (str): Word 模板文件路径 (.docx)。
         output_doc_path (str): 输出的 Word 文档文件路径。
         image_path (Optional[str]): 要插入的图片文件路径。如果为 None，则不插入图片。
@@ -136,7 +140,9 @@ def generate_word_document(requirement_name:str,json_data_path: str, template_pa
             'existing_problems': data.get('system_status', {}).get('existing_problems', ''),
             # 添加当前月份
             'MONTH': datetime.datetime.now().strftime('%m'),
-            'title ': requirement_name,
+            # 添加需求名称和功能点文本
+            'req_name': requirement_name,
+            'word_text': word_text or '', # 如果 word_text 为 None，则使用空字符串
         }
         logger.debug("上下文数据准备完成。")
 
