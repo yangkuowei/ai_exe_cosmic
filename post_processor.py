@@ -2,74 +2,30 @@ import logging
 from pathlib import Path
 import os
 import re
+import json
+from typing import Optional # Import Optional for type hinting
 
-# Assuming these functions/classes are defined elsewhere and needed
 from project_paths import ProjectPaths
 from read_file_content import merge_temp_files, save_content_to_file, read_file_content
 from exceltool.exceltool import process_excel_files
+from create_req_word import generate_word_document # 导入 Word 生成函数
 
 logger = logging.getLogger(__name__)
-
-def parse_analysis_file(file_path: Path) -> (str, str):
-    """
-    Parses the business analysis markdown file to extract targets (需求背景)
-    and necessity (需求解决方案) sections, cleaning basic markdown.
-    """
-    targets = " " # Default value
-    necessity = " " # Default value
-    logger.debug(f"Attempting to parse analysis file: {file_path}")
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        # --- Extract Targets (需求背景) ---
-        # Find the line starting with '### 需求背景', capture everything after it until the next '---' line (allowing trailing whitespace on separator)
-        targets_match = re.search(r"^### 需求背景\s*?\n(.*?)(?=^---\s*$)", content, re.MULTILINE | re.DOTALL)
-        if targets_match:
-            raw_targets = targets_match.group(1).strip()
-            # Clean markdown bold (**text**) -> text
-            cleaned_targets = re.sub(r'\*\*(.*?)\*\*', r'\1', raw_targets)
-            # Remove potential list markers like '1. ', '* ' etc. at the beginning of lines if needed
-            # cleaned_targets = re.sub(r"^\s*[\*\-\d]+\.\s+", "", cleaned_targets, flags=re.MULTILINE) # Optional stricter cleaning
-            targets = cleaned_targets.strip()
-            logger.debug(f"Extracted Targets: {targets[:100]}...") # Log snippet
-        else:
-             logger.warning(f"Could not find '### 需求背景' section in {file_path}")
-
-
-        # --- Extract Necessity (需求解决方案) ---
-         # Find the line starting with '### 需求解决方案', capture everything after it until the next '---' line (allowing trailing whitespace on separator)
-        necessity_match = re.search(r"^### 需求解决方案\s*?\n(.*?)(?=^---\s*$)", content, re.MULTILINE | re.DOTALL)
-        if necessity_match:
-            raw_necessity = necessity_match.group(1).strip()
-            # Clean markdown bold (**text**) -> text
-            cleaned_necessity = re.sub(r'\*\*(.*?)\*\*', r'\1', raw_necessity)
-            # cleaned_necessity = re.sub(r"^\s*[\*\-\d]+\.\s+", "", cleaned_necessity, flags=re.MULTILINE) # Optional stricter cleaning
-            necessity = cleaned_necessity.strip()
-            logger.debug(f"Extracted Necessity: {necessity[:100]}...") # Log snippet
-        else:
-             logger.warning(f"Could not find '### 需求解决方案' section in {file_path}")
-
-
-    except FileNotFoundError:
-        logger.error(f"Analysis file not found when trying to parse: {file_path}")
-    except Exception as e:
-        logger.error(f"Error parsing analysis file {file_path}: {e}", exc_info=True)
-
-    return targets, necessity
 
 
 def run_post_processing(req_name: str, config: ProjectPaths, dev_name: str, req_base: str, doc_file: Path):
     """
-    Handles post-processing steps for a single requirement:
-    - Merges temporary COSMIC tables.
-    - Generates final Markdown, Excel, and Word files.
-    - Fills the template Excel file.
-    - Cleans up temporary files.
+    处理单个需求的后置处理步骤：
+    - 合并临时COSMIC表
+    - 生成最终的Markdown、Excel和Word文件
+    - 生成最终的Markdown、Excel文件
+    - 填充Excel模板文件
+    - 生成最终的Word文件 (新)
+    - 清理临时文件
     """
     logger.info(f"[{req_name}] 阶段 4: 开始后置处理")
     try:
-        # Determine paths
+        # Determine paths (保持不变)
         output_dir_for_req = config.output / dev_name / req_base
         output_dir_for_req.mkdir(parents=True, exist_ok=True)
         final_output_file = output_dir_for_req / f"{req_base}_cosmic_merged.md"
@@ -128,51 +84,89 @@ def run_post_processing(req_name: str, config: ProjectPaths, dev_name: str, req_
                      logger.error(f"[{req_name}] 合并或写入文件过程中出错: {merge_err}")
                      merged_content_for_export = None
 
-        # Export if content is available
+        # Export if content is available (保持不变)
         if merged_content_for_export is not None:
-            # 5. Generate Excel
-            logger.info(f"[{req_name}] 开始将合并后的 Markdown 转换为 Excel 文件...")
+            # 5. Generate Excel (保持不变)
+            logger.info(f"[{req_name}] 阶段 5: 开始将合并后的 Markdown 转换为 Excel 文件...")
+            excel_output_path = output_dir_for_req / (req_base + '.xlsx')
             save_content_to_file(
                 file_name=req_base,
                 output_dir=output_dir_for_req,
                 content=merged_content_for_export,
                 content_type="xlsx"
             )
-            logger.info(f"[{req_name}] Excel 文件已生成: {output_dir_for_req / (req_base + '.xlsx')}")
+            logger.info(f"[{req_name}] Excel 文件已生成: {excel_output_path}")
 
-            # 6. Generate Word
-            logger.info(f"[{req_name}] 开始将 Excel 文件转换为 Word 文件...")
-            save_content_to_file(
-                file_name=req_base,
-                output_dir=output_dir_for_req,
-                content=merged_content_for_export,
-                content_type="docx"
-            )
-            logger.info(f"[{req_name}] Word 文件已生成: {output_dir_for_req / (req_base + '.docx')}")
+            # 移除旧的 Word 生成步骤 (save_content_to_file with content_type="docx")
+            # logger.info(f"[{req_name}] 开始将 Excel 文件转换为 Word 文件...") # 旧步骤移除
+            # save_content_to_file(...) # 旧步骤移除
+            # logger.info(f"[{req_name}] Word 文件已生成: ...") # 旧步骤移除
 
-            # 7. Fill template Excel
-            logger.info(f"[{req_name}] 阶段 7: 开始使用生成的 Excel 填充模板...")
-            source_excel_for_template = output_dir_for_req / f"{req_base}.xlsx"
+            # 6. Fill template Excel (原步骤7，提前以便获取架构图路径等信息)
+            logger.info(f"[{req_name}] 阶段 6: 开始使用生成的 Excel 填充模板...")
+            source_excel_for_template = excel_output_path # 使用上面生成的Excel路径
             template_excel = config.base_dir / "out_template" / "template.xlsx"
-            template_word = config.base_dir / "out_template" / "template.docx"
+            # template_word 路径将在生成Word时定义
             final_excel_output = output_dir_for_req / f"{req_base}_COSMIC.xlsx"
 
-            # Parse analysis file
-            analysis_file_path = output_dir_for_req / f"business_req_analysis_{req_base}.txt"
-            logger.info(f"[{req_name}] 正在解析分析文件以提取建设目标和必要性: {analysis_file_path}")
-            extracted_targets, extracted_necessity = parse_analysis_file(analysis_file_path)
+            # Read targets and necessity from JSON file (保持不变)
+            extracted_targets: str = ""
+            extracted_necessity: str = ""
+            # 定义需求描述 JSON 文件路径 (与 requirement_analysis.py 中的 get_description_json_path 逻辑一致)
+            json_file_path = output_dir_for_req / f"{config.REQ_DESC_PREFIX}{req_base}{config.REQ_DESC_SUFFIX}"
+            logger.info(f"[{req_name}] 正在读取 JSON 文件以提取建设目标和必要性: {json_file_path}")
+            if json_file_path.exists():
+                try:
+                    with open(json_file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    if 'requirement_description' in data:
+                        if 'construction_goals' in data['requirement_description'] and isinstance(data['requirement_description']['construction_goals'], list):
+                            extracted_targets = "\n".join(data['requirement_description']['construction_goals'])
+                            logger.info(f"[{req_name}] 已提取建设目标。")
+                        else:
+                            logger.warning(f"[{req_name}] 在 JSON 文件中未找到 'construction_goals' 列表。")
 
+                        if 'necessity' in data['requirement_description'] and isinstance(data['requirement_description']['necessity'], list):
+                            extracted_necessity = "\n".join(data['requirement_description']['necessity'])
+                            logger.info(f"[{req_name}] 已提取建设必要性。")
+                        else:
+                            logger.warning(f"[{req_name}] 在 JSON 文件中未找到 'necessity' 列表。")
+                    else:
+                        logger.warning(f"[{req_name}] 在 JSON 文件中未找到 'requirement_description' 对象。")
+
+                except json.JSONDecodeError:
+                    logger.error(f"[{req_name}] 解析 JSON 文件失败: {json_file_path}")
+                except Exception as e:
+                    logger.error(f"[{req_name}] 读取或处理 JSON 文件时出错 {json_file_path}: {e}", exc_info=True)
+            else:
+                logger.warning(f"[{req_name}] 需求描述 JSON 文件未找到，无法提取建设目标和必要性: {json_file_path}")
+
+
+            # Find architecture diagram image (保持不变, 但移到填充Excel之前)
+            architecture_diagram_file: Optional[Path] = None
+            # 定义架构图文件路径 (与 requirement_analysis.py 中的 get_architecture_diagram_path 逻辑一致)
+            expected_diagram_path = output_dir_for_req / f"{req_base}{config.ARCH_DIAGRAM_SUFFIX}"
+            logger.info(f"[{req_name}] 正在查找架构图文件: {expected_diagram_path}")
+            if expected_diagram_path.exists():
+                architecture_diagram_file = expected_diagram_path
+                logger.info(f"[{req_name}] 找到架构图文件: {architecture_diagram_file}")
+            else:
+                logger.info(f"[{req_name}] 在 {output_dir_for_req} 未找到架构图文件: {expected_diagram_path.name}")
+
+
+            # 填充Excel模板 (保持不变)
             if source_excel_for_template.exists() and template_excel.exists():
-                success = process_excel_files(
+                success_excel_fill = process_excel_files(
                     source_excel_path=source_excel_for_template,
                     template_excel_path=template_excel,
                     output_excel_path=final_excel_output,
-                    requirement_file_name=doc_file.name,
+                    requirement_file_name=doc_file.name, # 原始需求文件名
                     targets=extracted_targets,
-                    necessity=extracted_necessity
+                    necessity=extracted_necessity,
+                    architecture_diagram_path=architecture_diagram_file # Pass the image path
                 )
-                if success:
-                    logger.info(f"[{req_name}] 最终模板填充 Excel 文件已生成: {final_excel_output}")
+                if success_excel_fill:
+                    logger.info(f"[{req_name}] 最终模板填充 Excel 文件（包含架构图，如果找到）已生成: {final_excel_output}")
                 else:
                     logger.error(f"[{req_name}] 填充模板 Excel 文件失败。")
             else:
@@ -180,10 +174,48 @@ def run_post_processing(req_name: str, config: ProjectPaths, dev_name: str, req_
                     logger.error(f"[{req_name}] 无法填充模板，因为源 Excel 文件不存在: {source_excel_for_template}")
                 if not template_excel.exists():
                      logger.error(f"[{req_name}] 无法填充模板，因为模板 Excel 文件不存在: {template_excel}")
-        else:
+
+            # 7. Generate final Word document (新步骤)
+            logger.info(f"[{req_name}] 阶段 7: 开始生成最终 Word 文档...")
+            # 定义最终 Word 输出路径 (与 requirement_analysis.py 中的 get_final_word_path 逻辑一致)
+            final_word_output = output_dir_for_req / f"{req_base}{config.FINAL_WORD_SUFFIX}"
+            template_word = config.base_dir / "out_template" / "template.docx" # Word 模板路径
+
+            # 检查依赖项
+            if not json_file_path.exists():
+                logger.error(f"[{req_name}] 无法生成 Word 文档，依赖的需求描述 JSON 文件不存在: {json_file_path}")
+            elif not template_word.exists():
+                logger.error(f"[{req_name}] 无法生成 Word 文档，模板文件不存在: {template_word}")
+            else:
+                # 架构图路径已在上面查找过 (architecture_diagram_file)
+                img_path_for_word = str(architecture_diagram_file) if architecture_diagram_file else None
+                if not img_path_for_word:
+                     logger.warning(f"[{req_name}] 未找到架构图文件，Word 文档将不包含图片。")
+
+                try:
+                    # 调用 Word 生成函数
+                    success_word_gen = generate_word_document(
+                        requirement_name=req_base, # 使用需求基本名
+                        json_data_path=str(json_file_path),
+                        template_path=str(template_word),
+                        output_doc_path=str(final_word_output),
+                        image_path=img_path_for_word,
+                        image_placeholder='sequence_diagram_mermaid', # 与 requirement_analysis 中保持一致
+                        # image_width_cm=15 # 可选参数
+                    )
+
+                    if success_word_gen:
+                        logger.info(f"[{req_name}] 最终 Word 文档生成成功: {final_word_output}")
+                    else:
+                        logger.error(f"[{req_name}] 最终 Word 文档生成失败 (由 generate_word_document 报告)")
+
+                except Exception as word_err:
+                    logger.error(f"[{req_name}] 生成最终 Word 文档过程中发生意外错误: {word_err}", exc_info=True)
+
+        else: # This else corresponds to the `if merged_content_for_export is not None:` block
              logger.warning(f"[{req_name}] 由于未能获取合并后的内容，跳过 Excel、Word 和最终模板填充文件生成。")
 
-    except Exception as post_process_e:
+    except Exception as post_process_e: # This corresponds to the main try block
         logger.error(f"[{req_name}] 阶段 4-7 后置处理失败: {post_process_e}", exc_info=True)
         # Decide if this should halt the entire process for this requirement
         # raise post_process_e # Optionally re-raise

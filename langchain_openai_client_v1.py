@@ -218,7 +218,7 @@ class LangChainCosmicTableGenerator:
         session_id = f"session_{int(time.time())}_{random.randint(10000, 99999)}"
         config = {"configurable": {"session_id": session_id}}
 
-        #self.chat.callbacks = [self._create_stream_callback(session_id)]
+        self.chat.callbacks = [self._create_stream_callback(session_id)]
 
         for attempt in range(max_chat_count + 1):
             try:
@@ -301,6 +301,8 @@ class LangChainCosmicTableGenerator:
                 else:
                     if self.token_count % 100 == 0:
                         history_manager.local.logger.debug(f'{session_id}已处理{self.token_count}个token')
+                if self.token_count > 20480 :
+                    raise ValueError(f"超过上下文长度，生成失败！")
 
 
 

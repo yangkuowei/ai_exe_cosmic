@@ -64,7 +64,7 @@ def process_single_event(
     table_rows = event_data['functional_user_requirements'][0]['tableRows']
     
     # 组合业务需求文本和触发事件文本
-    combined_content = f"{business_req}\n\n{json.dumps(event_data, indent=2, ensure_ascii=False)}"
+    combined_content = f"完整业务需求\n{business_req}\n本次生成表格仅处理此JSON中定义的内容和行数\n{json.dumps(event_data, indent=2, ensure_ascii=False)}"
     
     # 调用AI生成表格
     validator = partial(validate_cosmic_table, expected_total_rows=table_rows)

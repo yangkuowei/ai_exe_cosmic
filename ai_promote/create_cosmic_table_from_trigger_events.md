@@ -109,7 +109,7 @@
         "initiator": "发起系统 (例如：网上营业厅)",
         "receiver": "接收系统 (例如：订单中心)"
       },
-      "tableRows": 3, // 本次JSON需生成的总表格行数 (必须为正整数)
+      "tableRows": 3, // 本次JSON需生成的总表格行数
       "trigger_events": [
         {
           "event": "触发事件描述 (例如：用户提交新装申请)",

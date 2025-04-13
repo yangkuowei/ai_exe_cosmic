@@ -476,7 +476,7 @@ def validate_trigger_event_json(json_str: str, total_rows: int) -> Tuple[bool, s
     # 功能过程(FP)规则
 
     # 合并用于检查
-    ALL_FORBIDDEN_KEYWORDS = set(FORBIDDEN_KEYWORDS_ERROR + FORBIDDEN_KEYWORDS_WARN)
+    ALL_FORBIDDEN_KEYWORDS = set(FORBIDDEN_KEYWORDS_ERROR)
 
     # 功能过程(FP)总数估算相关 (基于平均子过程数 2.5 )
     FP_TOTAL_COUNT_FACTOR_MIN = 3.0
@@ -609,9 +609,14 @@ def validate_trigger_event_json(json_str: str, total_rows: int) -> Tuple[bool, s
     most_likely_count = round(total_rows / 2.5)
 
     if total_process_count > 0 and not (lower_bound <= total_process_count <= upper_bound):
-        errors.append(
-            f"数量校验警告: 当前生成的功能过程总数 ({total_process_count}) 与预期行数 ({total_rows}) 推算的功能过程数量范围 [{lower_bound}-{upper_bound}]不符。请检查拆分粒度。"
-        )
+        base_warning = f"数量校验警告: 当前生成的功能过程总数 ({total_process_count}) 与预期行数 ({total_rows}) 推算的功能过程数量范围 [{lower_bound}-{upper_bound}]不符。"
+        if total_process_count > upper_bound:
+            suggestion = "需要减少功能过程数量。"
+        elif total_process_count < lower_bound:
+            suggestion = "需要增加功能过程数量。"
+        else: # This case should technically not be reached due to the outer 'if' condition
+            suggestion = "请检查拆分粒度。"
+        errors.append(f"{base_warning} {suggestion}")
 
     # --- 5. 返回结果 ---
     return not errors, "\n".join(errors)
