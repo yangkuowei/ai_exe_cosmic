@@ -43,3 +43,8 @@ class ProjectPaths:
 
     # --- Other Prefixes (If used elsewhere) ---
     TRIGGER_EVENT_PREFIX = "trigger_events_"
+
+    # --- Developer Filtering ---
+    # 如果列表为空，则处理所有开发者目录；否则只处理列表中的开发者
+    ALLOWED_DEVELOPERS: list[str] = ["谢宇强"] # 示例：只处理梁海祥目录
+    # ALLOWED_DEVELOPERS: list[str] = [] # 示例：处理所有开发者目录

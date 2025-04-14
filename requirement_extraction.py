@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import pythoncom
 
 from read_file_content import read_word_document
 from validate_cosmic_table import extract_json_from_text
@@ -26,6 +25,9 @@ def process_requirement_document(
     output_dir: Path,
     prompt: str
 ) -> Optional[str]:
+
+    import pythoncom
+
     """处理单个需求文档并保存JSON结果"""
     # 检查是否已处理过
     output_path = output_dir / f"{doc_path.stem}.json"

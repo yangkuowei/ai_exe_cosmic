@@ -14,7 +14,6 @@ from docx.shared import Pt, RGBColor
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 import subprocess
-import win32com.client as win32
 
 # 文件操作
 
@@ -382,6 +381,7 @@ def read_word_document(file_path: str) -> str:
     """
 
     def read_doc_file(path):
+        import win32com.client as win32
         word = win32.gencache.EnsureDispatch('Word.Application')
         doc = word.Documents.Open(path)
         content = doc.Content.Text

@@ -1,5 +1,6 @@
 """需求分析模块 - 读取需求文档并调用AI进行分析"""
 import json
+import time
 from pathlib import Path
 import logging
 from typing import Tuple, Any, List, Optional
@@ -7,6 +8,7 @@ import subprocess
 import os
 
 from ai_common import load_model_config
+from decorators import ai_processor
 # from create_req_word import generate_word_document # 移至 post_processor
 from langchain_openai_client_v1 import call_ai
 from read_file_content import read_file_content, save_content_to_file, read_word_document
@@ -169,15 +171,39 @@ def requirement_analysis_validator(data: Any) -> Tuple[bool, str]:
         return False, f"校验失败: {str(e)}"
 
 def _find_requirement_files(config: ProjectPaths, req_name: Optional[str] = None) -> List[Path]:
-    """查找需求文档文件 (.doc, .docx) (保持不变)"""
-    # ... (function remains the same) ...
+    """查找需求文档文件 (.doc, .docx)，增加基于 ALLOWED_DEVELOPERS 的过滤"""
     doc_files = []
     if req_name is None:
-        dev_dirs = [d for d in config.requirements.iterdir() if d.is_dir() and d.name != 'template']
-        for dev_dir in dev_dirs:
+        # 处理所有需求，但根据 ALLOWED_DEVELOPERS 过滤
+        allowed_devs = getattr(config, 'ALLOWED_DEVELOPERS', None) # 安全地获取列表
+        dev_dirs_to_scan = []
+
+        if allowed_devs is None:
+            logger.warning("ProjectPaths 配置中未找到 ALLOWED_DEVELOPERS 列表，将处理所有开发者目录。")
+            dev_dirs_to_scan = [d for d in config.requirements.iterdir() if d.is_dir() and d.name != 'template']
+        elif not isinstance(allowed_devs, list):
+             logger.warning("ProjectPaths 配置中的 ALLOWED_DEVELOPERS 不是列表，将处理所有开发者目录。")
+             dev_dirs_to_scan = [d for d in config.requirements.iterdir() if d.is_dir() and d.name != 'template']
+        elif not allowed_devs: # 列表为空，处理所有
+             logger.info("ALLOWED_DEVELOPERS 列表为空，将处理所有开发者目录。")
+             dev_dirs_to_scan = [d for d in config.requirements.iterdir() if d.is_dir() and d.name != 'template']
+        else:
+            # 只处理列表中的开发者
+            logger.info(f"根据 ALLOWED_DEVELOPERS 列表过滤开发者目录: {allowed_devs}")
+            for dev_name_allowed in allowed_devs:
+                dev_dir = config.requirements / dev_name_allowed
+                if dev_dir.is_dir():
+                    dev_dirs_to_scan.append(dev_dir)
+                else:
+                    logger.warning(f"配置中允许的开发者目录不存在: {dev_dir}")
+
+        # 扫描选定的目录
+        for dev_dir in dev_dirs_to_scan:
             logger.debug(f"扫描目录查找需求文件: {dev_dir}")
             doc_files.extend(list(dev_dir.glob("*.doc")) + list(dev_dir.glob("*.docx")))
+
     else:
+        # 处理指定的需求文件 (逻辑保持不变)
         if "/" not in req_name:
              # Try to find based on stem only if no slash
              found = list(config.requirements.rglob(f"{req_name}.doc")) + \
@@ -218,7 +244,9 @@ def _run_and_save_initial_analysis(context: AnalysisContext) -> bool:
 
     logger.info(f"步骤 1: 开始对 '{context.request_stem}' 进行初步AI分析...")
     try:
-        json_data = call_ai(
+        json_data = ai_processor()(
+            call_ai
+        )(
             ai_prompt=context.analysis_prompt,
             requirement_content=context.original_content,
             extractor=extract_json_from_text,
@@ -278,7 +306,9 @@ def _convert_and_save_business_text(context: AnalysisContext) -> bool:
              logger.error(f"步骤 2 失败：无法加载转换提示词 {converter_prompt_path}")
              return False
 
-        business_text = call_ai(
+        business_text = ai_processor()(
+            call_ai
+        )(
             ai_prompt=converter_prompt,
             requirement_content=json_content,
             extractor=extract_markdown_from_text,
@@ -369,7 +399,9 @@ def _generate_and_save_requirement_description(context: AnalysisContext) -> bool
              logger.error(f"步骤 4 失败：无法加载需求描述提示词 {desc_prompt_path}")
              return False
 
-        req_description_json = call_ai(
+        req_description_json = ai_processor()(
+            call_ai
+        )(
             ai_prompt=desc_prompt,
             requirement_content=context.original_content,
             extractor=extract_json_from_text,
@@ -523,6 +555,7 @@ def analyze_requirements(req_name: Optional[str] = None):
 
     # --- 处理每个文件 ---
     for request_file in doc_files:
+        time.sleep(3)
         logger.info(f"\n--- 开始处理文件: {request_file.relative_to(config.requirements)} ---")
         context = None
         file_failed = False # Track if any step failed for this file

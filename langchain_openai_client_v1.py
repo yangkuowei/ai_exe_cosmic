@@ -296,13 +296,8 @@ class LangChainCosmicTableGenerator:
 
             def on_llm_new_token(self, token: str, **kwargs) -> None:
                 self.token_count += 1
-                if token:
-                    print(token, end='')
-                else:
-                    if self.token_count % 100 == 0:
-                        history_manager.local.logger.debug(f'{session_id}已处理{self.token_count}个token')
-                if self.token_count > 20480 :
-                    raise ValueError(f"超过上下文长度，生成失败！")
+                if self.token_count % 100 == 0:
+                    history_manager.local.logger.debug(f'{session_id}已处理{self.token_count}个token')
 
 
 

@@ -110,8 +110,8 @@ def create_trigger_events(req_name: str = None):
             raise FileNotFoundError(f"未找到预处理后的JSON文件: {config.output}")
         
         # 使用线程池处理，添加限流控制
-        max_concurrent = 12  # 最大并发数
-        request_interval = 1  # 请求间隔(秒)
+        max_concurrent = 32  # 最大并发数
+        request_interval = 3  # 请求间隔(秒)
         
         with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
             futures = {}

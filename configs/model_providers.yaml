@@ -1,5 +1,6 @@
 # 默认使用的模型提供商（可选）
-default_provider: deepseek
+# qwen2.5-72b-instruct qwq-32b
+default_provider: vllm
 
 providers:
   302:
@@ -20,7 +21,7 @@ providers:
 
   aliyun:
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    model_name: qwq-32b
+    model_name: qwen2.5-72b-instruct
     env_mapping:
       api_key: DASHSCOPE_API_KEY
       base_url: ALIYUN_BASE_URL
@@ -57,7 +58,7 @@ providers:
       model_name: SILICONFLOW_MODEL
   vllm:
     base_url: http://192.168.3.108:8080/v1/
-    model_name: Qwen2.5-14B-Instruct-1M
+    model_name: QwQ-32B-AWQ
     env_mapping:
       api_key: SILICONFLOW_API_KEY
       base_url: SILICONFLOW_BASE_URL

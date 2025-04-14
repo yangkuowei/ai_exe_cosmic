@@ -23,16 +23,46 @@ logger = logging.getLogger(__name__)
 # Removed parse_analysis_file function as it was moved to post_processor.py
 
 def get_doc_files(config: ProjectPaths) -> List[Path]:
-    """获取所有需求文档文件"""
+    """获取所有需求文档文件，根据 ALLOWED_DEVELOPERS 配置进行过滤"""
     doc_files = []
-    # 扫描所有开发人员子目录
-    for dev_dir in config.requirements.iterdir():
-        if dev_dir.is_dir():
-            doc_files.extend(list(dev_dir.glob("*.doc")) + list(dev_dir.glob("*.docx")))
-    
+    allowed_devs = getattr(config, 'ALLOWED_DEVELOPERS', None) # 安全地获取列表
+    dev_dirs_to_scan = []
+
+    if allowed_devs is None:
+        logger.warning("ProjectPaths 配置中未找到 ALLOWED_DEVELOPERS 列表，将扫描所有开发者目录。")
+        dev_dirs_to_scan = [d for d in config.requirements.iterdir() if d.is_dir() and d.name != 'template']
+    elif not isinstance(allowed_devs, list):
+         logger.warning("ProjectPaths 配置中的 ALLOWED_DEVELOPERS 不是列表，将扫描所有开发者目录。")
+         dev_dirs_to_scan = [d for d in config.requirements.iterdir() if d.is_dir() and d.name != 'template']
+    elif not allowed_devs: # 列表为空，处理所有
+         logger.info("ALLOWED_DEVELOPERS 列表为空，将扫描所有开发者目录。")
+         dev_dirs_to_scan = [d for d in config.requirements.iterdir() if d.is_dir() and d.name != 'template']
+    else:
+        # 只处理列表中的开发者
+        logger.info(f"根据 ALLOWED_DEVELOPERS 列表过滤开发者目录: {allowed_devs}")
+        for dev_name_allowed in allowed_devs:
+            dev_dir = config.requirements / dev_name_allowed
+            if dev_dir.is_dir():
+                dev_dirs_to_scan.append(dev_dir)
+            else:
+                logger.warning(f"配置中允许的开发者目录不存在，将被跳过: {dev_dir}")
+
+    # 扫描选定的目录
+    for dev_dir in dev_dirs_to_scan:
+        logger.debug(f"扫描目录查找需求文件: {dev_dir}")
+        doc_files.extend(list(dev_dir.glob("*.doc")) + list(dev_dir.glob("*.docx")))
+
     if not doc_files:
-        raise FileNotFoundError(f"需求目录中未找到.doc或.docx文件: {config.requirements}")
-    logger.info(f"发现 {len(doc_files)} 个需求文档待处理。")
+        # 根据过滤条件调整日志消息
+        if allowed_devs:
+             logger.warning(f"在允许的开发者目录 {allowed_devs} 中未找到 .doc 或 .docx 文件。")
+        else:
+             logger.warning(f"需求目录 {config.requirements} 中未找到 .doc 或 .docx 文件。")
+        # 不再抛出异常，而是返回空列表，让主流程处理
+        # raise FileNotFoundError(f"需求目录中未找到.doc或.docx文件: {config.requirements}")
+    else:
+        logger.info(f"根据过滤条件，发现 {len(doc_files)} 个需求文档待处理。")
+
     return doc_files
 
 def process_single_requirement(doc_file: Path, config: ProjectPaths):
@@ -119,4 +149,7 @@ def main():
         # 在顶层可以选择是否重新抛出，这里选择不抛出，仅记录日志
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        exit(1)

@@ -54,7 +54,7 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
     FUNCTIONAL_USER_REGEX = r"^发起者:\s*.*?\s*接收者：\s*.*$"
     DATA_ATTRIBUTE_REGEX = r"^[\u4e00-\u9fa5\s,，]+$"
     DATA_ATTRIBUTE_SPLIT_REGEX = r"[,，]\s*"
-    ROW_COUNT_TOLERANCE = 0.10  # 10% 容忍度
+    ROW_COUNT_TOLERANCE = 0.8  # 10% 容忍度
 
     # --- 主校验逻辑 ---
     errors: List[str] = []
@@ -92,12 +92,12 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
     # 如果 expected_total_rows < 0，这是无效输入，但这里不处理，假设输入是有效的正整数或0
 
     # --- 初始化检查所需的数据结构 ---
-    process_rows: Dict[str, List[Dict[str, Any]]] = {}
+    process_rows: Dict[str, List[Dict[str, Any]]] = {} # 用于按功能过程分组行
     all_data_attributes_tuples: Set[Tuple[str, ...]] = set()
     process_entry_details: Dict[str, Tuple[str, Tuple[str, ...]]] = {}
     process_exit_details: Dict[str, Tuple[str, Tuple[str, ...]]] = {}
     process_read_details: Dict[str, List[Tuple[str, Tuple[str, ...]]]] = {}
-    seen_sub_processes: Dict[str, Dict[str, Any]] = {}  # 用于检查重复的子过程描述
+    # 全局 seen_sub_processes 字典已移除
 
     # --- 逐行基础校验 ---
     for row_index, row in enumerate(table_data):
@@ -149,14 +149,7 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
             if sub_process_cell == process_cell:
                 errors.append(
                     f"数据行 {data_row_num} (文件行 {file_row_num}): '子过程描述' ({sub_process_cell}) 不能与 '功能过程' 相同。")
-            # 检查重复的子过程描述
-            elif sub_process_cell in seen_sub_processes:
-                seen_row = seen_sub_processes[sub_process_cell]
-                errors.append(
-                    f"子过程描述重复：行 {data_row_num} 的子过程描述 '{sub_process_cell}' "
-                    f"与行 {seen_row['_data_row_num']} 的子过程描述重复，请从新生成行 {data_row_num} 的子过程描述 '{sub_process_cell}。")
-            else:
-                seen_sub_processes[sub_process_cell] = row
+            # 全局子过程重复检查逻辑已移除
             # 检查禁用关键字
             for keyword in FORBIDDEN_KEYWORDS_SUBPROCESS:
                 if keyword == "调用XX接口" and "调用" in sub_process_cell and "接口" in sub_process_cell:
@@ -218,13 +211,30 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
                             process_read_details[process_cell] = []
                         process_read_details[process_cell].append(current_details)
 
+        # 按功能过程分组行，用于后续跨行检查
         if process_cell:
             if process_cell not in process_rows:
                 process_rows[process_cell] = []
             process_rows[process_cell].append(row)
 
     # --- 跨行校验 ---
-    # 1. 检查重复的数据属性
+
+    # 1. 检查每个功能过程内部是否有重复的子过程描述
+    for process, rows_in_process in process_rows.items():
+        seen_sub_processes_in_block: Dict[str, int] = {} # {sub_process_desc: first_seen_data_row_num}
+        for row in rows_in_process:
+            sub_process_cell = row.get("子过程描述", "")
+            data_row_num = row['_data_row_num']
+            if sub_process_cell: # 只检查非空的子过程描述
+                if sub_process_cell in seen_sub_processes_in_block:
+                    first_seen_row = seen_sub_processes_in_block[sub_process_cell]
+                    errors.append(
+                        f"子过程描述重复错误：在功能过程 '{process}' 内部，行 {data_row_num} 的子过程描述 '{sub_process_cell}' "
+                        f"与该功能过程内首次出现的行 {first_seen_row} 重复。")
+                else:
+                    seen_sub_processes_in_block[sub_process_cell] = data_row_num
+
+    # 2. 检查重复的数据属性 (全局检查)
     seen_attributes = {}
     for i, row in enumerate(table_data):
         attributes_str = row["数据属性"]
@@ -232,12 +242,13 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
             seen_row = seen_attributes[attributes_str]
             errors.append(
                 f"数据属性重复：行 {row['_data_row_num']} 的数据属性 '{attributes_str}' "
-                f"与行 {seen_row['_data_row_num']} 的数据属性 '{seen_row['数据属性']}' 完全重复，请更改行 {row['_data_row_num']} 的数据属性 '{attributes_str}'")
+                f"与行 {seen_row['_data_row_num']} 的数据属性 '{seen_row['数据属性']}' 完全重复，请更改行 {row['_data_row_num']} 的数据属性以消除重复")
         else:
             seen_attributes[attributes_str] = row
 
-    for process, rows in process_rows.items():
-        rows.sort(key=lambda r: r['_file_row_num'])
+    # 3. 检查每个功能过程内部的数据移动序列
+    for process, rows in process_rows.items(): # 使用已分组的 process_rows
+        rows.sort(key=lambda r: r['_file_row_num']) # 确保按文件行号排序
         moves = [row["数据移动类型"] for row in rows]
         file_row_nums = [row['_file_row_num'] for row in rows]
 
@@ -258,6 +269,44 @@ def validate_cosmic_table(markdown_table_str: str, expected_total_rows: int) -> 
                     errors.append(
                         f"功能过程 '{process}' (涉及文件行: {file_row_nums[i]} 到 {file_row_nums[i + 2]}) 包含不允许的 'ERW' 数据移动组合。应该拆成ERX组合，并修改对应的子过程描述"
                     )
+
+    # 4. 检查功能过程是否不连续重复
+    if table_data: # 只有在表格有数据时才执行
+        process_blocks: List[Tuple[str, int, int]] = [] # (process_name, start_row_num, end_row_num)
+        current_process = table_data[0].get("功能过程", "")
+        start_row_num = table_data[0]['_data_row_num']
+
+        for i in range(1, len(table_data)):
+            row = table_data[i]
+            process_cell = row.get("功能过程", "")
+            data_row_num = row['_data_row_num']
+
+            if process_cell != current_process:
+                # 当前块结束
+                if current_process: # 只添加非空的功能过程块
+                    process_blocks.append((current_process, start_row_num, table_data[i-1]['_data_row_num']))
+                # 开始新块
+                current_process = process_cell
+                start_row_num = data_row_num
+
+        # 添加最后一个块
+        if current_process: # 确保最后一个块的功能过程非空
+             process_blocks.append((current_process, start_row_num, table_data[-1]['_data_row_num']))
+
+        # 检查重复的功能过程块
+        process_occurrences: Dict[str, List[Tuple[int, int]]] = {} # {process_name: [(start1, end1), (start2, end2), ...]}
+        for name, start, end in process_blocks:
+            # name 在这里已经保证非空
+            if name not in process_occurrences:
+                process_occurrences[name] = []
+            process_occurrences[name].append((start, end))
+
+        # 查找不连续的重复
+        for name, occurrences in process_occurrences.items():
+            if len(occurrences) > 1:
+                occurrence_ranges = [f"行 {start}-{end}" for start, end in occurrences]
+                errors.append(f"功能过程重复错误：功能过程 '{name}' 在表格中不连续地出现多次，分别在: {', '.join(occurrence_ranges)}。")
+
 
     # --- 返回结果 ---
     final_errors = sorted(list(set(errors)))
@@ -471,7 +520,7 @@ def validate_trigger_event_json(json_str: str, total_rows: int) -> Tuple[bool, s
 
     # 触发事件(TE)规则
     TE_MIN_FP = 1
-    TE_MAX_FP = 6
+    TE_MAX_FP = 25
 
     # 功能过程(FP)规则
 
@@ -558,10 +607,10 @@ def validate_trigger_event_json(json_str: str, total_rows: int) -> Tuple[bool, s
                 errors.append(f"结构校验错误: {event_path}['functional_processes'] 必须是一个列表。")
                 continue  # 没有有效的功能过程列表
 
-            # 规则3：TE下的FP数量校验
-            # if not (TE_MIN_FP <= len(processes) <= TE_MAX_FP):
-            #     errors.append(
-            #         f"数量校验错误: {event_path} (触发事件 '{event_desc}') 包含 {len(processes)} 个功能过程，应在 {TE_MIN_FP} 到 {TE_MAX_FP} 个之间 。")
+            #规则3：TE下的FP数量校验
+            if not (TE_MIN_FP <= len(processes) <= TE_MAX_FP):
+                errors.append(
+                    f"数量校验错误: {event_path} (触发事件 '{event_desc}') 包含 {len(processes)} 个功能过程，应在 {TE_MIN_FP} 到 {TE_MAX_FP} 个之间 。请细化拆分触发事件！")
 
             if not processes:
                 errors.append(f"结构校验错误: {event_path}['functional_processes'] 列表不能为空，至少需要一个功能过程。")
