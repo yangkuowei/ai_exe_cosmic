@@ -136,11 +136,11 @@ class ThreadLocalChatHistoryManager:
                 })
             
             # 只有校验通过时才添加校验通过标记
-            if is_valid:
-                messages.append({
-                    "role": 'human',
-                    "content":'校验通过',
-                })
+            # if is_valid:
+            #     messages.append({
+            #         "role": 'human',
+            #         "content":'校验通过',
+            #     })
             return messages
         except Exception as e:
             self.local.logger.error(f"获取聊天上下文失败: {str(e)}")
