@@ -17,9 +17,10 @@ logging.basicConfig(
 base_logger = logging.getLogger(__name__)
 T = TypeVar('T')
 
+
 class ThreadLocalChatHistoryManager:
     """线程本地聊天历史管理类"""
-    
+
     def __init__(self):
         self.local = threading.local()
         self._init_thread_logger()
@@ -34,13 +35,13 @@ class ThreadLocalChatHistoryManager:
                 if not ThreadLocalChatHistoryManager._logger_initialized:
                     logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
                     os.makedirs(logs_dir, exist_ok=True)
-                    
+
                     hour_timestamp = time.strftime("%Y%m%d%H", time.localtime())
                     log_file = os.path.join(logs_dir, f'app_{hour_timestamp}.log')
-                    
+
                     logger = logging.getLogger(f'{__name__}.hourly')
                     logger.setLevel(logging.DEBUG)
-                    
+
                     if not logger.handlers:
                         file_handler = logging.FileHandler(log_file)
                         file_handler.setLevel(logging.DEBUG)
@@ -48,17 +49,17 @@ class ThreadLocalChatHistoryManager:
                             '%(asctime)s [Thread-%(thread)d] - %(levelname)s - %(message)s'
                         ))
                         logger.addHandler(file_handler)
-                        
+
                         console_handler = logging.StreamHandler()
                         console_handler.setLevel(logging.DEBUG)
                         console_handler.setFormatter(logging.Formatter(
                             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
                         ))
                         logger.addHandler(console_handler)
-                    
+
                     logger.propagate = False
                     ThreadLocalChatHistoryManager._logger_initialized = True
-                
+
                 self.local.logger = logging.getLogger(f'{__name__}.hourly')
                 self.local.logger.debug(f"线程 {threading.get_ident()} 已连接日志系统")
 
@@ -75,41 +76,59 @@ class ThreadLocalChatHistoryManager:
             if not hasattr(self.local, 'store'):
                 self.local.logger.debug("初始化线程本地存储")
                 self.local.store = {}
-            
+
             if session_id not in self.local.store:
                 self.local.logger.debug(f"创建新的会话历史 session_id={session_id}")
                 self.local.store[session_id] = []
-            
+
             return self.local.store[session_id]
         except Exception as e:
             base_logger.error(f"处理会话历史时出错: {str(e)}")
             raise
 
-    def get_chat_context(self, session_id: str, system_prompt: str = "", is_valid: bool = True) -> list:
+    def get_chat_context(self, session_id: str) -> list:
         """获取完整聊天上下文"""
         self._ensure_logger()
         try:
             history = self.get_session_history(session_id)
             messages = []
-            
-            if system_prompt:
-                messages.append({
-                    "role": "system",
-                    "content": system_prompt,
-                })
-            
+
             for msg in history:
                 messages.append({
                     "role": msg["role"],
                     "content": msg["content"],
                 })
-            
+
             return messages
         except Exception as e:
             self.local.logger.error(f"获取聊天上下文失败: {str(e)}")
             return []
 
+    def add_session_history(self, session_id: str, message: dict) -> None:
+        """添加消息到会话历史"""
+        self._ensure_logger()
+        try:
+            history = self.get_session_history(session_id)
+            history.append(message)
+            self.local.logger.debug(f"已添加消息到会话 {session_id}: {message}")
+        except Exception as e:
+            self.local.logger.error(f"添加会话历史失败: {str(e)}")
+            raise
+
+    def remove_session_history(self, session_id: str, index: int) -> None:
+        """添加消息到会话历史"""
+        self._ensure_logger()
+        try:
+            history = self.get_session_history(session_id)
+            message = history.pop(index)
+            self.local.logger.debug(f"已删除记忆 {session_id}: {message}")
+        except Exception as e:
+            self.local.logger.error(f"删除记忆失败: {str(e)}")
+            raise
+
+
 history_manager = ThreadLocalChatHistoryManager()
+
 
 class OpenAIClient:
     def __init__(self, config: ModelConfig):
@@ -146,54 +165,60 @@ class OpenAIClient:
     ) -> Optional[T]:
         """生成并验证COSMIC表格内容"""
         session_id = f"session_{int(time.time())}_{random.randint(10000, 99999)}"
-        history = history_manager.get_session_history(session_id)
-        
+        # history = history_manager.get_session_history(session_id)
         # 初始化消息历史
-        history = [
-            {"role": "system", "content": cosmic_ai_prompt},
-            {"role": "user", "content": requirement_content}
-        ]
-        
+
+        history_manager.add_session_history(session_id, {"role": "system", "content": cosmic_ai_prompt})
+        history_manager.add_session_history(session_id, {"role": "user", "content": requirement_content})
+
         for attempt in range(max_chat_count + 1):
             try:
                 history_manager._ensure_logger()
                 history_manager.local.logger.info(f"session_id={session_id} 开始调用AI")
-                
+
                 # 调用OpenAI API（流式模式）
                 response = self.client.chat.completions.create(
                     model=self.config.model_name,
-                    messages=history,
+                    messages=history_manager.get_session_history(session_id),
                     temperature=self.config.temperature,
                     max_tokens=self.config.max_tokens,
                     stream=True
                 )
-                
+
                 # 收集流式响应内容并实时处理
-                reasoning_content ,full_answer = process_stream_response(response)
-                history.append({"role": "assistant", "content": full_answer})
+                reasoning_content, full_answer = process_stream_response(response)
+                history_manager.add_session_history(session_id, {"role": "assistant", "content": full_answer})
 
                 history_manager.local.logger.info("收到AI响应 (长度: %d 字符)", len(full_answer))
-                
+
                 # 提取和验证结果
                 extracted_data = extractor(full_answer)
                 is_valid, error = validator(extracted_data)
 
                 if is_valid:
                     history_manager.local.logger.info("本轮AI生成内容校验通过")
-                    self._save_chat_history(session_id, cosmic_ai_prompt, is_valid=True)
+                    self._save_chat_history(session_id)
                     return extracted_data
 
                 if attempt == max_chat_count:
-                    self._save_chat_history(session_id, cosmic_ai_prompt, is_valid=False)
+                    self._save_chat_history(session_id)
                     history_manager.local.logger.error("历史对话次数已达最大次数(%d)", max_chat_count)
                     raise ValueError(f"验证失败：{error}")
-                
+
                 # 构建重试提示
                 retry_prompt = self._build_retry_prompt(error)
-                history.append({"role": "user", "content": retry_prompt})
-                
+
+                history_manager.add_session_history(session_id, {"role": "user", "content": retry_prompt})
+
                 history_manager.local.logger.info(retry_prompt)
-                history_manager.local.logger.info(f"第{attempt+1}次重试，更新请求内容")
+                history_manager.local.logger.info(f"第{attempt + 1}次重试，更新请求内容")
+
+                # 只保存最近的记忆，中间的不重要
+                # history = history_manager.get_session_history(session_id)
+                # if len(history) >= 8:
+                #     history_manager.remove_session_history(session_id, 2)
+                #     history_manager.remove_session_history(session_id, 2)
+
 
             except Exception as e:
                 history_manager.local.logger.error("生成过程中发生异常：%s", str(e))
@@ -201,32 +226,24 @@ class OpenAIClient:
 
         return None
 
-    def _save_chat_history(self, session_id: str, system_prompt: str, is_valid: bool):
+    def _save_chat_history(self, session_id: str):
         """保存聊天历史到文件"""
         try:
             chat_history_dir = os.path.join(os.path.dirname(__file__), 'chat_history')
             os.makedirs(chat_history_dir, exist_ok=True)
             history_file = os.path.join(chat_history_dir, f'{session_id}.json')
 
-            chat_context = history_manager.get_chat_context(session_id, system_prompt, is_valid)
+            chat_context = history_manager.get_chat_context(session_id)
             with open(history_file, 'w', encoding='utf-8') as f:
                 json.dump(chat_context, f, ensure_ascii=False, indent=2)
-            
+
             history_manager.local.logger.debug(f"聊天历史已保存到: {history_file}")
         except Exception as e:
             history_manager.local.logger.error(f"保存聊天历史失败: {str(e)}")
 
     def _build_retry_prompt(self, error: str) -> str:
         """构建重试提示模板"""
-        return f"""\n上次生成内容未通过验证：{error}
-        \n
-## 请根据以下要求重新生成：
-
-1.  请严格遵循 **COSMIC 规范** 进行内容组织，并使用 **Markdown 语法** 进行格式化输出。
-2.  在本次生成中，请 **仅修改** 上一版本输出中未能通过校验的部分。对于已经通过校验的部分，请 **保持其内容与上一版本完全一致**，无需进行任何调整。
-3.  对于已修改的内容，**无需** 添加任何关于修改位置或修改内容的备注信息。
-
-"""
+        return f"\n上次生成内容未通过验证：{error}\n**请按提示逐点修改不通过内容，然后输出完整的修改后的内容。**"
 
 
 def process_stream_response(completion) -> Tuple[str, str]:

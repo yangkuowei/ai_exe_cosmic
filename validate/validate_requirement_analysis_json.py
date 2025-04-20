@@ -1,6 +1,7 @@
 import json
 import re
 from collections import defaultdict
+from math import ceil, floor
 from typing import Tuple, Dict, List, Any, Set
 
 
@@ -119,8 +120,8 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
     # 4.1 校验FUR数量与工作量的关系
     if workload > 0: # 避免除以零
         target_furs = workload / FUR_WORKLOAD_TARGET
-        min_expected_furs = round(target_furs * (1 - FUR_WORKLOAD_FLUCTUATION))
-        max_expected_furs = round(target_furs * (1 + FUR_WORKLOAD_FLUCTUATION))
+        min_expected_furs = floor(target_furs * (1 - FUR_WORKLOAD_FLUCTUATION))
+        max_expected_furs = ceil(target_furs * (1 + FUR_WORKLOAD_FLUCTUATION))
         if not (min_expected_furs <= num_furs <= max_expected_furs):
              errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能用户需求(FUR)数量应在 {min_expected_furs}-{max_expected_furs} 个左右 (每个FUR约{FUR_WORKLOAD_TARGET}工作量)。当前数量为 {num_furs} 个，请检查FUR的拆分是否合理。")
 

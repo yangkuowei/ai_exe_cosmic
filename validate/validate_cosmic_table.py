@@ -204,7 +204,7 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
             dm_type = row_info["data"].get("数据移动类型", "").strip()
             if dm_type not in VALID_DATA_MOVEMENT_TYPES:
                 # 错误提示：无效的数据移动类型
-                final_errors.append(f"数据移动类型错误 (第 {row_num} 行): 值 '{dm_type}' 不是有效的数据移动类型 ({VALID_DATA_MOVEMENT_TYPES})。请使用 E, R, W, 或 X 中的一个。")
+                final_errors.append(f"数据移动类型错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 值 '{dm_type}' 不是有效的数据移动类型 ({VALID_DATA_MOVEMENT_TYPES})。请使用 E, R, W, 或 X 中的一个。")
 
     # --- 校验数据属性 (强制规则 11) ---
     if headers_match:
@@ -213,7 +213,7 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
             attributes_str = row_info["data"].get("数据属性", "").strip()
             if not attributes_str:
                 # 错误提示：数据属性不能为空 (隐含强制)
-                final_errors.append(f"数据属性错误 (第 {row_num} 行): 数据属性不能为空。请填写 3-10 个关键业务属性。")
+                final_errors.append(f"数据属性错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 数据属性不能为空。请填写 3-10 个关键业务属性。")
                 continue
 
             attributes = [attr.strip() for attr in re.split(ATTR_SEPARATOR, attributes_str) if attr.strip()]
@@ -222,18 +222,18 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
             # 检查数量 (强制)
             if not (MIN_ATTR <= attr_count <= MAX_ATTR):
                 # 错误提示：属性数量不符合要求
-                final_errors.append(f"数据属性数量错误 (第 {row_num} 行): 属性数量为 {attr_count}，要求在 {MIN_ATTR} 到 {MAX_ATTR} 个之间。请调整属性数量。")
+                final_errors.append(f"数据属性数量错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 属性数量为 {attr_count}，要求在 {MIN_ATTR} 到 {MAX_ATTR} 个之间。请调整属性数量。")
 
             # 检查内容格式 (强制)
             if not VALID_ATTR_CHAR_REGEX.match(attributes_str):
                  # 错误提示：包含无效字符
-                 final_errors.append(f"数据属性格式错误 (第 {row_num} 行): 属性 '{attributes_str}' 中包含除中文、字母、数字、空格和中文逗号之外的字符。要求使用中文业务术语。请修正。")
+                 final_errors.append(f"数据属性格式错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 属性 '{attributes_str}' 中包含除中文、字母、数字、空格和中文逗号之外的字符。要求使用中文业务术语。请修正。")
             # 检查是否包含疑似英文/数据库字段名 (强制禁止)
             for attr in attributes:
                 # 允许纯大写缩写如ID, GUID, URL等，或者包含数字的如 10GPON
                 if ENGLISH_FIELD_REGEX.search(attr) and not re.match(r'^[A-Z0-9/]+$', attr):
                      # 错误提示：包含英文字段名
-                     final_errors.append(f"数据属性格式错误 (第 {row_num} 行): 属性 '{attr}' 包含英文或数据库字段名。要求使用中文业务术语。请检查并修正。")
+                     final_errors.append(f"数据属性格式错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 属性 '{attr}' 包含英文或数据库字段名。要求使用中文业务术语。请检查并修正。")
 
 
     # --- 校验子过程描述 (强制规则 8) ---
@@ -247,31 +247,31 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
 
             if not sub_process_desc:
                  # 错误提示：子过程描述不能为空 (隐含强制)
-                 final_errors.append(f"子过程描述错误 (第 {row_num} 行): 子过程描述不能为空。请填写。")
+                 final_errors.append(f"子过程描述错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 子过程描述不能为空。请填写。")
                  continue
 
             # 检查绝对禁止词 (强制规则 8.f)
             for keyword in FORBIDDEN_KEYWORDS_SUBPROCESS_ABSOLUTE:
                 if keyword in sub_process_desc_lower:
                     # 错误提示：包含绝对禁止词
-                    final_errors.append(f"子过程描述禁止词错误 (第 {row_num} 行): 子过程描述 '{sub_process_desc}' 中包含绝对禁止使用的关键字 '{keyword}'。请移除该关键字。")
+                    final_errors.append(f"子过程描述禁止词错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 子过程描述 '{sub_process_desc}' 中包含绝对禁止使用的关键字 '{keyword}'。请移除该关键字。")
 
             # 检查其他禁止词 (强制规则 8.f)
             for keyword in FORBIDDEN_KEYWORDS_SUBPROCESS_OTHER:
                  if keyword in sub_process_desc_lower and keyword not in ['输入', '读取', '保存', '更新', '删除', '返回', '输出', '发送']: # 排除模板动词本身
                     # 错误提示：包含其他禁止词
-                     final_errors.append(f"子过程描述禁止词错误 (第 {row_num} 行): 子过程描述 '{sub_process_desc}' 中包含禁止使用的关键字 '{keyword}'。请移除或替换该关键字。")
+                     final_errors.append(f"子过程描述禁止词错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 子过程描述 '{sub_process_desc}' 中包含禁止使用的关键字 '{keyword}'。请移除或替换该关键字。")
 
             # 检查禁止模式 (如 '校验XXX') (强制规则 8.f)
             match = FORBIDDEN_PATTERN_REGEX.search(sub_process_desc)
             if match:
                 # 错误提示：包含禁止模式
-                final_errors.append(f"子过程描述禁止模式错误 (第 {row_num} 行): 子过程描述 '{sub_process_desc}' 中包含禁止使用的模式 '{match.group(0)}' (如 '校验XXX')。请修改描述，避免此类校验/判断性词语。")
+                        final_errors.append(f"子过程描述禁止模式错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 子过程描述 '{sub_process_desc}' 中包含禁止使用的模式 '{match.group(0)}' (如 '校验XXX')。请修改描述，避免此类校验/判断性词语。")
 
             # 检查是否与功能过程名称相同 (强制规则 8.c)
             if sub_process_desc == process_name:
                 # 错误提示：子过程与功能过程相同
-                final_errors.append(f"子过程描述冗余错误 (第 {row_num} 行): 子过程描述 '{sub_process_desc}' 与其对应的功能过程名称 '{process_name}' 完全相同。子过程必须是对功能过程的分解，不能相同。请修改子过程描述。")
+                final_errors.append(f"子过程描述冗余错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 子过程描述 '{sub_process_desc}' 与其对应的功能过程名称 '{process_name}' 完全相同。子过程必须是对功能过程的分解，不能相同。请修改子过程描述。")
 
 
     # --- 按功能过程分组，校验序列、行数、唯一性、一致性 (强制规则 8, 9) ---
@@ -302,17 +302,17 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
                 # 检查开头
                 if first_dm_type != 'E':
                     # 错误提示：序列未以 E 开头
-                    final_errors.append(f"数据移动序列错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 行 {start_row}-{end_row}): 功能过程的第一步必须是 'E'，当前为 '{first_dm_type}'。请修正序列。")
+                    final_errors.append(f"数据移动序列错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 数据行 {rows_info[0]['index']+1}-{rows_info[-1]['index']+1} (文件行 {start_row}-{end_row})): 功能过程的第一步必须是 'E'，当前为 '{first_dm_type}'。请修正序列。")
                 # 检查结尾
                 if last_dm_type not in ('W', 'X'):
                      # 错误提示：序列未以 W 或 X 结尾
-                    final_errors.append(f"数据移动序列错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 行 {start_row}-{end_row}): 功能过程的最后一步必须是 'W' 或 'X'，当前为 '{last_dm_type}'。请修正序列。")
+                    final_errors.append(f"数据移动序列错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 数据行 {rows_info[0]['index']+1}-{rows_info[-1]['index']+1} (文件行 {start_row}-{end_row})): 功能过程的最后一步必须是 'W' 或 'X'，当前为 '{last_dm_type}'。请修正序列。")
                 # 检查不允许的相邻组合 (WX, XW, XR)
                 for i in range(row_count - 1):
                     pair = dm_types[i] + dm_types[i+1]
                     if pair in ('WX', 'XW', 'XR'):
                          # 错误提示：包含无效的相邻类型
-                        final_errors.append(f"数据移动序列错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 行 {row_nums[i]}-{row_nums[i+1]}): 检测到无效的序列 '{pair}'。请修正数据移动类型序列，避免 WX, XW, XR 组合。")
+                        final_errors.append(f"数据移动序列错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 数据行 {rows_info[i]['index']+1}-{rows_info[i+1]['index']+1} (文件行 {row_nums[i]}-{row_nums[i+1]})): 检测到无效的序列 '{pair}'。请修正数据移动类型序列，避免 WX, XW, XR 组合。")
 
             # 校验查询类行数和序列 (强制规则 8.a)
             is_query = any(keyword in process_name for keyword in QUERY_KEYWORDS)
@@ -321,10 +321,10 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
                 expected_sequence = "ERX"
                 if row_count != expected_rows:
                     # 错误提示：查询类行数不为 3
-                    final_errors.append(f"子过程行数错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 行 {start_row}-{end_row}): 功能过程是查询类，要求必须有 {expected_rows} 行 ({expected_sequence})，实际有 {row_count} 行。请修正子过程数量和对应的数据移动类型。")
+                    final_errors.append(f"子过程行数错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 数据行 {rows_info[0]['index']+1}-{rows_info[-1]['index']+1} (文件行 {start_row}-{end_row})): 功能过程是查询类，要求必须有 {expected_rows} 行 ({expected_sequence})，实际有 {row_count} 行。请修正子过程数量和对应的数据移动类型。")
                 elif "".join(dm_types) != expected_sequence:
                      # 错误提示：查询类序列不为 ERX
-                     final_errors.append(f"数据移动序列错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 行 {start_row}-{end_row}): 功能过程是查询类，要求数据移动类型序列必须为 '{expected_sequence}'，当前为 '{''.join(dm_types)}'。请修正数据移动类型。")
+                     final_errors.append(f"数据移动序列错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 数据行 {rows_info[0]['index']+1}-{rows_info[-1]['index']+1} (文件行 {start_row}-{end_row})): 功能过程是查询类，要求数据移动类型序列必须为 '{expected_sequence}'，当前为 '{''.join(dm_types)}'。请修正数据移动类型。")
             # else: # 非查询类
                 # 非查询类的行数 (2行) 和序列 (EW/EX) 是建议性的，不在此处强制校验
 
@@ -333,7 +333,7 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
             for i, desc in enumerate(sub_descs):
                 if desc in seen_sub_descs:
                     # 错误提示：子过程描述重复
-                    final_errors.append(f"子过程描述重复错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 行 {row_nums[i]}): 在同一个功能过程内，子过程描述 '{desc}' 重复出现。每个子过程描述应唯一。请修改重复的描述以体现差异。")
+                    final_errors.append(f"子过程描述重复错误 (功能过程: '{process_name}', 触发事件: '{trigger_event}', 数据行 {rows_info[i]['index']+1} (文件行 {row_nums[i]})): 在同一个功能过程内，子过程描述 '{desc}' 重复出现。每个子过程描述应唯一。请修改重复的描述以体现差异。")
                 seen_sub_descs.add(desc)
 
             # 校验子过程描述模板动词 (强制规则 8.b, 9.b)
@@ -346,7 +346,7 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
                     # 检查描述是否以模板动词之一开头
                     if not any(desc.startswith(verb) for verb in expected_verbs):
                          # 错误提示：未使用模板动词开头
-                        final_errors.append(f"子过程描述动词错误 (第 {row_num} 行): 数据移动类型为 '{dm_type}'，但子过程描述 '{desc}' 未使用建议的动词 ({expected_verbs}) 开头。请使用推荐动词之一修正描述。")
+                        final_errors.append(f"子过程描述动词错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 数据移动类型为 '{dm_type}'，但子过程描述 '{desc}' 未使用建议的动词 ({expected_verbs}) 开头。请使用推荐动词之一修正描述。")
 
             # 术语一致性 ("信息" vs "数据") 是建议性的，不在此处强制校验
 

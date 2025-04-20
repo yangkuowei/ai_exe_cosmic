@@ -12,6 +12,7 @@ from read_file_content import read_word_document, save_content_to_file
 from validate.validate_cosmic_table import validate_cosmic_table
 from validate.validate_requirement_analysis_json import validate_requirement_analysis_json
 from validate_cosmic_table import extract_json_from_text, extract_table_from_text
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class ProcessingContext:
@@ -170,7 +171,9 @@ class CosmicPipeline:
         # 使用线程池处理
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = [executor.submit(self._process_file, path, dev) for path, dev in req_files]
-            concurrent.futures.wait(futures)
+            for future in as_completed(futures):
+                future.result()
+
 
     # 以下为工具方法(需实现)
     def _extract_json_from_text(self, text: str) -> str:
