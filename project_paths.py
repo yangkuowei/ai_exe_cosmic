@@ -14,9 +14,9 @@ TEMPLATE_PATHS = {
 }
 
 # 输出文件后缀
-FILE_SUFFIXES = {
-    "requirement_json": "_requirement_analysis.json",
-    "cosmic_table": "_markdown_table.md"
+FILE_NAME = {
+    "requirement_json": "requirement_analysis.json",
+    "cosmic_table": "markdown_table.md"
 }
 
 # 支持的输入文件格式

@@ -6,11 +6,12 @@ from pathlib import Path
 import json
 
 from ai_common import load_model_config
-from project_paths import DEVELOPERS, TEMPLATE_PATHS, FILE_SUFFIXES, INPUT_FILE_EXTENSIONS
+from project_paths import DEVELOPERS, TEMPLATE_PATHS, INPUT_FILE_EXTENSIONS, FILE_NAME
 from my_openai_client import call_ai, ModelConfig
 from read_file_content import read_word_document, save_content_to_file
-from validate_cosmic_table import extract_json_from_text, validate_requirement_analysis_json, extract_table_from_text, \
-    validate_cosmic_table
+from validate.validate_cosmic_table import validate_cosmic_table
+from validate.validate_requirement_analysis_json import validate_requirement_analysis_json
+from validate_cosmic_table import extract_json_from_text, extract_table_from_text
 
 
 class ProcessingContext:
@@ -56,6 +57,21 @@ class CosmicPipeline:
     def _process_requirement_analysis(self, context: ProcessingContext) -> bool:
         """需求分析阶段"""
         try:
+            # 从输入文件名提取需求目录名（去掉后缀）
+            requirement_dir = Path(context.input_path).stem
+            
+            # 构建完整输出路径
+            output_path = f"{context.stage_data['output_dir']}/{requirement_dir}"
+            os.makedirs(output_path, exist_ok=True)
+            
+            # 检查输出文件是否已存在
+            full_file_name = f"{output_path}/{FILE_NAME['requirement_json']}"
+            if os.path.exists(full_file_name):
+                print(f"需求分析文件已存在，跳过处理: {full_file_name}")
+                with open(full_file_name, 'r', encoding='utf-8') as f:
+                    context.stage_data['requirement_json'] = f.read()
+                return True
+            
             # 读取需求文档内容
             content = read_word_document(context.input_path)
             
@@ -68,10 +84,9 @@ class CosmicPipeline:
                 config=self.model_config
             )
             
-            # 使用配置中的文件后缀
-            output_path = f"{context.stage_data['output_dir']}/{context.stem}{FILE_SUFFIXES['requirement_json']}"
+            # 保存结果
             save_content_to_file(
-                file_name=context.stem,
+                file_name=FILE_NAME['requirement_json'],
                 output_dir=output_path,
                 content=json_data,
                 content_type="json"
@@ -87,6 +102,17 @@ class CosmicPipeline:
     def _process_generate_cosmic(self, context: ProcessingContext) -> bool:
         """生成COSMIC表格阶段"""
         try:
+            # 构建完整输出路径
+            requirement_dir = Path(context.input_path).stem
+            output_path = f"{context.stage_data['output_dir']}/{requirement_dir}"
+            os.makedirs(output_path, exist_ok=True)
+            
+            # 检查输出文件是否已存在
+            full_file_name = f"{output_path}/{FILE_NAME['cosmic_table']}"
+            if os.path.exists(full_file_name):
+                print(f"COSMIC表格文件已存在，跳过处理: {full_file_name}")
+                return True
+            
             # 调用AI生成表格
             markdown_table = call_ai(
                 ai_prompt=self.cosmic_prompt,
@@ -96,11 +122,14 @@ class CosmicPipeline:
                 config=self.model_config
             )
             
-            # 使用配置中的文件后缀
-            output_path = f"{context.stage_data['output_dir']}/{context.stem}{FILE_SUFFIXES['cosmic_table']}"
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(markdown_table)
-            
+            # 保存结果
+            save_content_to_file(
+                file_name=FILE_NAME['cosmic_table'],
+                output_dir=output_path,
+                content=markdown_table,
+                content_type="markdown"
+            )
+
             return True
             
         except Exception as e:
