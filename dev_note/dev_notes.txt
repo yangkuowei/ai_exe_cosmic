@@ -1,0 +1,63 @@
+我需要完成一个通过ai生成cosmic表格的功能，总体处理流程如下：
+
+一、需求分析
+1、读取 requirements 目录下的子目录（开发人员目录） 下的所有原始doc需求文档，通过多线程（线程池管理）来并发处理每一个需求文档
+2、读取 ai_promote/requirement_analysis.md 文件的内容作为AI系统提示词
+3、调用AI， 通过以下方法调用
+json_data = call_ai(
+        ai_prompt=prompt, //AI系统提示词
+        requirement_content=requirement, //原始需求内容
+        extractor=extract_json_from_text, //回调函数def extract_json_from_text(text: str) -> str:，功能是从AI的完整回复中提取JSON字符串
+        validator=validate_requirement_analysis_json, //回调函数 def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str] ，功能是校验AI生成的JSON是否符合规则
+        max_chat_count=5,//与AI的对话次数
+        config=load_model_config() //模型配置
+)
+4、保存成功提取到的 json_data 数据到输出目录 out_put_files（在out_put_files新建开发人员的子目录）
+文件命名规范：requirement_analysis_json.json
+
+这个阶段（一阶段）的产物就是各个需求的 requirement_analysis_json.json
+
+二、生成cosmic表格
+1、读取一阶段生成的 requirement_analysis_json.json
+2、读取 ai_promote/create_cosmic_table.md 文件的内容作为AI系统提示词
+3、调用AI， 通过以下方法调用
+        markdown_table = call_ai(
+            ai_prompt=prompt,//AI系统提示词
+            requirement_content=json_data,//一阶段生成的json内容
+            extractor=extract_table_from_text,//回调函数 def extract_table_from_text(text: str) -> str:，功能是从AI的完整回复中提取markdown
+            validator=validate_cosmic_table, //回调函数def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str] 功能是校验AI生成的markdown是否符合规则
+            config=load_model_config()
+        )
+4、保存 markdown_table 的内容到文本数据到输出目录 out_put_files（在out_put_files新建开发人员的子目录）
+文件命名规范：markdown_table.md
+
+以上是2个主要的步骤，要求：
+
+1、可以多线程并发处理多个需求
+2、一阶段和二阶段是按照流水线的方式处理，即不需要等待一阶段所有需求都处理才进入二阶段，按照每个需求来做流水线处理，一个需求完成一阶段立刻进入二阶段
+3、整体应该设计一个能贯穿全流程的上下文对象，用于管理、存储各个阶段的变量、状态等
+4、除了以上2个主体步骤，还应该设计前置处理器、后置处理器，用于扩展功能
+5、程序整体流程应该是这样的：
+
+启动初始化 -> 前置处理器 -> 顺序执行每个阶段（设计应该要考虑扩展性，例如后续我需要增加三阶段只需要改动小部分代码即可走通流程） -> 后置处理器
+
+部分伪代码如下：
+
+            steps_to_run = [
+                init,
+                pre_process,
+                requirement_analysis,
+                generate_cosmic_table,
+                post_processor
+            ]
+
+            for i, step_func in enumerate(steps_to_run, 1):
+                step_name = step_func.__name__ # Get function name for logging
+                logger.debug(f"--- Executing Step {i}: {step_name} ---")
+                step_success = step_func(context)
+
+                if not step_success:
+                    logger.error(f"步骤 {i} ({step_name}) 执行失败 for {context.request_stem}。")
+                    file_failed = True
+                    break # Stop processing this file if a critical step fails
+........

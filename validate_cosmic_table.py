@@ -367,7 +367,7 @@ FIXED_VALUES = {
 # 数据属性规则 (强制规则 11)
 MIN_ATTR = 3
 MAX_ATTR = 10
-ATTR_SEPARATOR = '，' # 中文逗号
+ATTR_SEPARATOR = '，、,;' # 中文逗号
 # 用于检查数据属性是否只包含中文、字母、数字和指定分隔符的正则
 VALID_ATTR_CHAR_REGEX = re.compile(rf'^[a-zA-Z0-9\u4e00-\u9fa5{ATTR_SEPARATOR}\s]+$')
 # 用于检查是否包含英文字段名的正则 (简单检查，可能误判)
@@ -1075,7 +1075,7 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
     EVENT_DESC_MAX_LEN: int = 40
 
     # 功能过程名称字数限制
-    PROCESS_NAME_MIN_LEN: int = 30
+    PROCESS_NAME_MIN_LEN: int = 10
     PROCESS_NAME_MAX_LEN: int = 40
 
     # 工作量估算范围 (当无法从文本提取时)

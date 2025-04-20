@@ -218,7 +218,7 @@ class LangChainCosmicTableGenerator:
         session_id = f"session_{int(time.time())}_{random.randint(10000, 99999)}"
         config = {"configurable": {"session_id": session_id}}
 
-        self.chat.callbacks = [self._create_stream_callback(session_id)]
+        #self.chat.callbacks = [self._create_stream_callback(session_id)]
 
         for attempt in range(max_chat_count + 1):
             try:

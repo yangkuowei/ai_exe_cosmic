@@ -1,50 +1,23 @@
-"""项目路径配置公共模块"""
-from pathlib import Path
+from typing import List
 
-class ProjectPaths:
-    """项目路径配置"""
-    # --- Base Directories ---
-    base_dir: Path = Path(__file__).parent.resolve()
-    ai_promote: Path = base_dir / "ai_promote"
-    requirements: Path = base_dir / "requirements"
-    output: Path = base_dir / "out_put_files"
-    template_dir: Path = base_dir / "out_template"
+# 配置开发人员白名单
+DEVELOPERS: List[str] = [
+    "杨扩威", 
+    "张三",
+    "李四"
+]
 
-    # --- AI Prompt Filenames ---
-    REQ_ANALYSIS_PROMPT_FILENAME = "requirement_analysis.md"
-    JSON_CONVERTER_PROMPT_FILENAME = "json_onverter_requirements.md" # Note: Original had typo 'onverter'
-    REQ_DESC_PROMPT_FILENAME = "create_requirement_description.md"
+# 模板文件路径
+TEMPLATE_PATHS = {
+    "requirement_analysis": "ai_promote/requirement_analysis.md",
+    "cosmic_table": "ai_promote/create_cosmic_table.md"
+}
 
-    # --- Output File Prefixes/Suffixes/Patterns ---
-    # Step 1: Raw Analysis
-    RAW_ANALYSIS_PREFIX = "req_analysis_"
-    RAW_ANALYSIS_SUFFIX = ".json"
+# 输出文件后缀
+FILE_SUFFIXES = {
+    "requirement_json": "_requirement_analysis.json",
+    "cosmic_table": "_markdown_table.md"
+}
 
-    # Step 2: Business Text
-    BUSINESS_TEXT_PREFIX = "business_"
-    BUSINESS_TEXT_SUFFIX = ".txt"
-
-    # Step 3: Processed JSON
-    PROCESSED_JSON_PREFIX = "processed_"
-    # Suffix is same as raw analysis (.json)
-
-    # Step 4: Requirement Description JSON
-    REQ_DESC_PREFIX = "req_description_"
-    REQ_DESC_SUFFIX = ".json"
-
-    # Step 5: Architecture Diagram
-    ARCH_DIAGRAM_SUFFIX = "_architecture_diagram.png" # Appended to stem
-    TEMP_MERMAID_FILENAME = "diagram.mmd" # Temporary file for mmdc
-
-    # Step 6: Final Word Document
-    FINAL_WORD_SUFFIX = "-需求说明书.docx" # Appended to stem
-    WORD_TEMPLATE_FILENAME = "template.docx"
-    WORD_IMAGE_PLACEHOLDER = "sequence_diagram_mermaid" # Placeholder in template
-
-    # --- Other Prefixes (If used elsewhere) ---
-    TRIGGER_EVENT_PREFIX = "trigger_events_"
-
-    # --- Developer Filtering ---
-    # 如果列表为空，则处理所有开发者目录；否则只处理列表中的开发者
-    ALLOWED_DEVELOPERS: list[str] = ["谢宇强"] # 示例：只处理梁海祥目录
-    # ALLOWED_DEVELOPERS: list[str] = [] # 示例：处理所有开发者目录
+# 支持的输入文件格式
+INPUT_FILE_EXTENSIONS = ['.doc', '.docx']
