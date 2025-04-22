@@ -100,37 +100,124 @@ class CosmicPipeline:
             print(f"需求分析失败: {str(e)}")
             return False
 
+    def _split_requirement_json(self, json_str: str) -> List[Dict]:
+        """将需求JSON按triggeringEvents拆分为多个部分"""
+        data = json.loads(json_str)
+        requirements = data['requirementAnalysis']['functionalUserRequirements']
+        result = []
+        
+        for req in requirements:
+            for event in req['triggeringEvents']:
+                # Create a new JSON structure for each event
+                new_req = {
+                    'requirementAnalysis': {
+                        'customerRequirement': data['requirementAnalysis']['customerRequirement'],
+                        'customerRequirementWorkload': len(event['functionalProcesses']) * 3,
+                        'functionalUserRequirements': [{
+                            'description': req['description'],
+                            'triggeringEvents': [event]
+                        }]
+                    }
+                }
+                result.append(new_req)
+        return result
+
+    def _merge_markdown_files(self, output_path: str) -> str:
+        """合并所有part文件内容"""
+        merged_content = []
+        part_files = sorted(
+            [f for f in os.listdir(output_path) if f.startswith('cosmic_table_part_')],
+            key=lambda x: int(x.split('_')[-1].split('.')[0])
+        )
+        
+        for i, part_file in enumerate(part_files):
+            with open(os.path.join(output_path, part_file), 'r', encoding='utf-8') as f:
+                content = f.read()
+                if i > 0:  # For files after the first one, remove the header
+                    # Split by newlines and skip the first line (header)
+                    lines = content.split('\n')
+                    if len(lines) > 1:
+                        content = '\n'.join(lines[1:])
+                merged_content.append(content)
+                
+        return '\n\n'.join(merged_content)
+
+    def _process_single_event(self, event_data: Dict, output_path: str, part_num: int) -> bool:
+        """处理单个事件并生成markdown"""
+        part_file = f"cosmic_table_part_{part_num}.md"
+        full_path = os.path.join(output_path, part_file)
+        
+        if os.path.exists(full_path):
+            print(f"部分文件已存在，跳过处理: {full_path}")
+            return True
+            
+        try:
+            markdown_table = call_ai(
+                ai_prompt=self.cosmic_prompt,
+                requirement_content=json.dumps(event_data, ensure_ascii=False),
+                extractor=self._extract_table_from_text,
+                validator=self._validate_cosmic_table,
+                config=self.model_config
+            )
+            
+            save_content_to_file(
+                file_name=part_file,
+                output_dir=output_path,
+                content=markdown_table,
+                content_type="markdown"
+            )
+            return True
+        except Exception as e:
+            print(f"处理部分事件失败: {str(e)}")
+            return False
+
     def _process_generate_cosmic(self, context: ProcessingContext) -> bool:
-        """生成COSMIC表格阶段"""
+        """生成COSMIC表格阶段(并行处理)"""
         try:
             # 构建完整输出路径
             requirement_dir = Path(context.input_path).stem
             output_path = f"{context.stage_data['output_dir']}/{requirement_dir}"
             os.makedirs(output_path, exist_ok=True)
             
-            # 检查输出文件是否已存在
+            # 检查完整输出文件是否已存在
             full_file_name = f"{output_path}/{FILE_NAME['cosmic_table']}"
             if os.path.exists(full_file_name):
                 print(f"COSMIC表格文件已存在，跳过处理: {full_file_name}")
                 return True
             
-            # 调用AI生成表格
-            markdown_table = call_ai(
-                ai_prompt=self.cosmic_prompt,
-                requirement_content=context.stage_data['requirement_json'],
-                extractor=self._extract_table_from_text,
-                validator=self._validate_cosmic_table,
-                config=self.model_config
-            )
+            # 拆分JSON为多个事件部分
+            event_parts = self._split_requirement_json(context.stage_data['requirement_json'])
             
-            # 保存结果
+            # 使用线程池并行处理
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = []
+                for i, event_data in enumerate(event_parts, 1):
+                    futures.append(executor.submit(
+                        self._process_single_event, 
+                        event_data, 
+                        output_path, 
+                        i
+                    ))
+                
+                # 等待所有任务完成
+                results = [f.result() for f in futures]
+                if not all(results):
+                    return False
+                
+            # 合并所有部分文件
+            merged_content = self._merge_markdown_files(output_path)
             save_content_to_file(
                 file_name=FILE_NAME['cosmic_table'],
                 output_dir=output_path,
-                content=markdown_table,
+                content=merged_content,
                 content_type="markdown"
             )
-
+            
+            # 清理临时文件
+            for part_file in os.listdir(output_path):
+                if part_file.startswith('cosmic_table_part_'):
+                    os.remove(os.path.join(output_path, part_file))
+                    
             return True
             
         except Exception as e:
