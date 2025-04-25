@@ -30,7 +30,7 @@ class ProcessingContext:
 class CosmicPipeline:
     """COSMIC处理流水线"""
 
-    def __init__(self, max_workers: int = 4):
+    def __init__(self, max_workers: int = 12):
         self.max_workers = max_workers
         self.model_config = load_model_config()
 
@@ -82,7 +82,7 @@ class CosmicPipeline:
             requirement_content=content,
             extractor=self._extract_empty,
             validator=self._validate_empty,
-            config=self.model_config
+            config=load_model_config('aliyun')
         )
         # 保存结果
         save_content_to_file(
@@ -227,6 +227,7 @@ class CosmicPipeline:
             print(f"处理部分事件失败: {str(e)}")
             return False
 
+
     def _process_generate_cosmic(self, context: ProcessingContext) -> bool:
         """生成COSMIC表格阶段(并行处理)"""
         try:
@@ -245,7 +246,7 @@ class CosmicPipeline:
             event_parts = self._split_requirement_json(context.stage_data['requirement_json'])
 
             # 使用线程池并行处理
-            with ThreadPoolExecutor(max_workers=8) as executor:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futures = []
                 for i, event_data in enumerate(event_parts, 1):
                     futures.append(executor.submit(

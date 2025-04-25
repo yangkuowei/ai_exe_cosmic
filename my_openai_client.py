@@ -8,6 +8,7 @@ from typing import Callable, Tuple, Any, Optional, TypeVar
 import openai
 from openai import OpenAI
 from ai_common import ModelConfig
+from decorators import ai_processor
 
 # 配置基础日志
 logging.basicConfig(
@@ -224,7 +225,7 @@ class OpenAIClient:
 
             except Exception as e:
                 history_manager.local.logger.error("生成过程中发生异常：%s", str(e))
-                raise RuntimeError("COSMIC表格生成失败") from e
+                raise RuntimeError("生成过程中发生异常") from e
 
         return None
 
@@ -270,7 +271,7 @@ def process_stream_response(completion) -> Tuple[str, str]:
 
     return ''.join(reasoning_content), ''.join(answer_content)
 
-
+@ai_processor(max_retries=3)
 def call_ai(
         ai_prompt: str,
         requirement_content: str,
