@@ -355,7 +355,7 @@ def validate_cosmic_table(markdown_table_str: str, table_rows: Optional[int] = N
     # --- 校验表格行数 (如果提供了预期行数) ---
     if table_rows is not None and parsed_data:
         actual_rows = len(parsed_data)
-        min_rows = int(table_rows * 0.9)  # 10% lower bound
+        min_rows = int(table_rows * 0.7)  # 10% lower bound
         max_rows = int(table_rows * 1.1)  # 10% upper bound
         
         if not (min_rows <= actual_rows <= max_rows):

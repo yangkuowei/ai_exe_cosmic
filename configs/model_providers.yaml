@@ -1,6 +1,6 @@
 # 默认使用的模型提供商（可选）
 # qwen2.5-72b-instruct qwq-32b QwQ-32B-AWQ  Qwen2.5-14B-Instruct-1M
-default_provider: aliyun
+default_provider: deepseek
 
 providers:
   302:
@@ -21,7 +21,7 @@ providers:
 
   aliyun:
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    model_name: qwq-32b
+    model_name: qwq-plus-latest
     env_mapping:
       api_key: DASHSCOPE_API_KEY
       base_url: ALIYUN_BASE_URL

@@ -216,10 +216,10 @@ class OpenAIClient:
                 history_manager.local.logger.info(f"第{attempt + 1}次重试，更新请求内容")
 
                 # 只保存最近的记忆，中间的不重要
-                # history = history_manager.get_session_history(session_id)
-                # if len(history) >= 8:
-                #     history_manager.remove_session_history(session_id, 2)
-                #     history_manager.remove_session_history(session_id, 2)
+                history = history_manager.get_session_history(session_id)
+                if len(history) >= 8:
+                    history_manager.remove_session_history(session_id, 2)
+                    history_manager.remove_session_history(session_id, 2)
 
 
             except Exception as e:
@@ -245,7 +245,7 @@ class OpenAIClient:
 
     def _build_retry_prompt(self, error: str) -> str:
         """构建重试提示模板"""
-        return f"\n上次生成内容未通过验证：{error}\n**请按提示逐点修改不通过内容，然后输出完整的修改后的内容。**"
+        return f"\n上次生成内容未通过验证：{error}\n请按提示逐点修改不通过内容，**其它内容不做改动**，然后输出完整的修改后的内容。"
 
 
 def process_stream_response(completion) -> Tuple[str, str]:
@@ -277,7 +277,7 @@ def call_ai(
         extractor: Callable[[str], Any],
         validator: Callable[[Any], Tuple[bool, str]],
         config: ModelConfig,
-        max_chat_count: int = 3
+        max_chat_count: int = 4
 ) -> str:
     """调用AI生成表格的统一入口"""
     client = OpenAIClient(config=config)
