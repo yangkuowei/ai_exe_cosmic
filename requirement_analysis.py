@@ -122,25 +122,42 @@ class CosmicPipeline:
                 result.append(new_req)
         return result
 
+    def merge_temp_files(temp_files: List[Path]) -> str:
+        """合并临时Markdown表格文件"""
+        full_content = []
+        for i, file_path in enumerate(sorted(temp_files)):
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read().splitlines()
+
+                if i == 0:
+                    # 保留第一个文件的完整头
+                    full_content.extend(content)
+                else:
+                    # 跳过后续文件的头两行（标题和分隔符）
+                    full_content.extend(content[2:])
+
+        return "\n".join(full_content)
+
     def _merge_markdown_files(self, output_path: str) -> str:
         """合并所有part文件内容"""
-        merged_content = []
         part_files = sorted(
             [f for f in os.listdir(output_path) if f.startswith('cosmic_table_part_')],
             key=lambda x: int(x.split('_')[-1].split('.')[0])
         )
-        
+        full_content = []
         for i, part_file in enumerate(part_files):
-            with open(os.path.join(output_path, part_file), 'r', encoding='utf-8') as f:
-                content = f.read()
-                if i > 0:  # For files after the first one, remove the header
-                    # Split by newlines and skip the first line (header)
-                    lines = content.split('\n')
-                    if len(lines) > 1:
-                        content = '\n'.join(lines[1:])
-                merged_content.append(content)
-                
-        return '\n\n'.join(merged_content)
+            with open(os.path.join(output_path, part_file), "r", encoding="utf-8") as f:
+                content = f.read().splitlines()
+                if i == 0:
+                    # 保留第一个文件的完整头
+                    full_content.extend(content)
+                else:
+                    # 跳过后续文件的头两行（标题和分隔符）
+                    full_content.extend(content[2:])
+
+        return "\n".join(full_content)
+
+
 
     def _process_single_event(self, event_data: Dict, output_path: str, part_num: int) -> bool:
         """处理单个事件并生成markdown"""
@@ -156,7 +173,7 @@ class CosmicPipeline:
                 ai_prompt=self.cosmic_prompt,
                 requirement_content=json.dumps(event_data, ensure_ascii=False),
                 extractor=self._extract_table_from_text,
-                validator=self._validate_cosmic_table,
+                validator=lambda x: self._validate_cosmic_table(x, event_data['requirementAnalysis']['customerRequirementWorkload']),
                 config=self.model_config
             )
             
@@ -278,10 +295,10 @@ class CosmicPipeline:
         # 实现表格提取逻辑
         return extract_table_from_text(text)
 
-    def _validate_cosmic_table(self, markdown_table_str: str) -> Tuple[bool, str]:
+    def _validate_cosmic_table(self, markdown_table_str: str, table_rows: Optional[int] = None) -> Tuple[bool, str]:
         """验证COSMIC表格"""
         # 实现验证逻辑
-        return validate_cosmic_table(markdown_table_str)
+        return validate_cosmic_table(markdown_table_str,table_rows)
 
 if __name__ == '__main__':
     pipeline = CosmicPipeline()

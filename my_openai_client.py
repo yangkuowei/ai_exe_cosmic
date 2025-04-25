@@ -196,11 +196,13 @@ class OpenAIClient:
                 is_valid, error = validator(extracted_data)
 
                 if is_valid:
+                    history_manager.add_session_history(session_id, {"role": "user", "content": '本轮生成内容通过了校验，你真是太棒了！'})
                     history_manager.local.logger.info("本轮AI生成内容校验通过")
                     self._save_chat_history(session_id)
                     return extracted_data
 
                 if attempt == max_chat_count:
+                    history_manager.add_session_history(session_id, {"role": "user", "content": '本轮生成内容没有通过校验，你真是太蠢了！你还需要努力学习！'})
                     self._save_chat_history(session_id)
                     history_manager.local.logger.error("历史对话次数已达最大次数(%d)", max_chat_count)
                     raise ValueError(f"验证失败：{error}")
@@ -275,7 +277,7 @@ def call_ai(
         extractor: Callable[[str], Any],
         validator: Callable[[Any], Tuple[bool, str]],
         config: ModelConfig,
-        max_chat_count: int = 5
+        max_chat_count: int = 3
 ) -> str:
     """调用AI生成表格的统一入口"""
     client = OpenAIClient(config=config)

@@ -1,6 +1,6 @@
 import re
 from collections import defaultdict
-from typing import Tuple, Dict, List, Any
+from typing import Tuple, Dict, List, Any, Optional
 
 # --- 基于提示词规则定义的常量 ---
 
@@ -150,7 +150,7 @@ def parse_markdown_table(markdown_table_str: str) -> Tuple[List[Dict[str, str]],
 
 # --- 主校验函数 ---
 
-def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
+def validate_cosmic_table(markdown_table_str: str, table_rows: Optional[int] = None) -> Tuple[bool, str]:
     """
     校验 AI 生成的 COSMIC 度量 Markdown 表格是否符合所有强制规则。
 
@@ -351,6 +351,18 @@ def validate_cosmic_table(markdown_table_str: str) -> Tuple[bool, str]:
             # 术语一致性 ("信息" vs "数据") 是建议性的，不在此处强制校验
 
     # 数据属性差异性 (EW/ERX) 是建议性的，不在此处强制校验
+
+    # --- 校验表格行数 (如果提供了预期行数) ---
+    if table_rows is not None and parsed_data:
+        actual_rows = len(parsed_data)
+        min_rows = int(table_rows * 0.9)  # 10% lower bound
+        max_rows = int(table_rows * 1.1)  # 10% upper bound
+        
+        if not (min_rows <= actual_rows <= max_rows):
+            final_errors.append(
+                f"表格行数错误: 预期行数约为 {table_rows} (允许±10%浮动)，实际行数为 {actual_rows}。"
+                f"请检查表格内容是否符合功能过程数量要求。"
+            )
 
     # --- 返回结果 ---
     is_valid = not final_errors
