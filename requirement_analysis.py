@@ -1,7 +1,8 @@
 import os
 import threading
 import concurrent.futures
-from typing import Dict, Any, List, Optional, Tuple
+import logging
+from typing import Dict, Any, List, Optional, Tuple, Callable
 from pathlib import Path
 import json
 
@@ -30,14 +31,34 @@ class ProcessingContext:
 class CosmicPipeline:
     """COSMIC处理流水线"""
 
-    def __init__(self, max_workers: int = 12):
+    def __init__(
+        self, 
+        max_workers: int = 12,
+        json_extractor: Callable[[str], str] = extract_json_from_text,
+        table_extractor: Callable[[str], str] = extract_table_from_text,
+        json_validator: Callable[[str], Tuple[bool, str]] = validate_requirement_analysis_json,
+        table_validator: Callable[[str, Optional[int]], Tuple[bool, str]] = validate_cosmic_table
+    ):
         self.max_workers = max_workers
         self.model_config = load_model_config()
+        self.json_extractor = json_extractor
+        self.table_extractor = table_extractor 
+        self.json_validator = json_validator
+        self.table_validator = table_validator
+        
+        # 初始化日志
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
 
-        # 从配置读取提示词模板
+        # 从配置读取提示词模板和路径
         self.requirement_extraction_prompt = self._read_prompt(TEMPLATE_PATHS["requirement_extraction"])
         self.requirement_prompt = self._read_prompt(TEMPLATE_PATHS["requirement_analysis"])
         self.cosmic_prompt = self._read_prompt(TEMPLATE_PATHS["cosmic_table"])
+        self.output_base_dir = TEMPLATE_PATHS.get("output_base_dir", "out_put_files")
 
     def _read_prompt(self, path: str) -> str:
         """读取提示词文件"""
@@ -46,7 +67,7 @@ class CosmicPipeline:
 
     def _init_processing(self, context: ProcessingContext) -> bool:
         """初始化处理"""
-        context.stage_data['output_dir'] = f"out_put_files/{context.developer}"
+        context.stage_data['output_dir'] = f"{self.output_base_dir}/{context.developer}"
         os.makedirs(context.stage_data['output_dir'], exist_ok=True)
         return True
 
@@ -69,7 +90,7 @@ class CosmicPipeline:
         # 检查输出文件是否已存在
         full_file_name = f"{output_path}/{FILE_NAME['requirement_extraction']}"
         if os.path.exists(full_file_name):
-            print(f"需求已提取，跳过处理: {full_file_name}")
+            self.logger.info(f"需求已提取，跳过处理: {full_file_name}")
             with open(full_file_name, 'r', encoding='utf-8') as f:
                 context.stage_data['requirement_extraction'] = f.read()
             return True
@@ -108,7 +129,7 @@ class CosmicPipeline:
             # 检查输出文件是否已存在
             full_file_name = f"{output_path}/{FILE_NAME['requirement_json']}"
             if os.path.exists(full_file_name):
-                print(f"需求分析文件已存在，跳过处理: {full_file_name}")
+                self.logger.info(f"需求分析文件已存在，跳过处理: {full_file_name}")
                 with open(full_file_name, 'r', encoding='utf-8') as f:
                     context.stage_data['requirement_json'] = f.read()
                 return True
@@ -137,7 +158,7 @@ class CosmicPipeline:
             return True
 
         except Exception as e:
-            print(f"需求分析失败: {str(e)}")
+            self.logger.error(f"需求分析失败: {str(e)}")
             return False
 
     def _split_requirement_json(self, json_str: str) -> List[Dict]:
@@ -161,22 +182,6 @@ class CosmicPipeline:
                 }
                 result.append(new_req)
         return result
-
-    def merge_temp_files(temp_files: List[Path]) -> str:
-        """合并临时Markdown表格文件"""
-        full_content = []
-        for i, file_path in enumerate(sorted(temp_files)):
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read().splitlines()
-
-                if i == 0:
-                    # 保留第一个文件的完整头
-                    full_content.extend(content)
-                else:
-                    # 跳过后续文件的头两行（标题和分隔符）
-                    full_content.extend(content[2:])
-
-        return "\n".join(full_content)
 
     def _merge_markdown_files(self, output_path: str) -> str:
         """合并所有part文件内容"""
@@ -203,7 +208,7 @@ class CosmicPipeline:
         full_path = os.path.join(output_path, part_file)
 
         if os.path.exists(full_path):
-            print(f"部分文件已存在，跳过处理: {full_path}")
+            self.logger.info(f"部分文件已存在，跳过处理: {full_path}")
             return True
 
         try:
@@ -224,7 +229,7 @@ class CosmicPipeline:
             )
             return True
         except Exception as e:
-            print(f"处理部分事件失败: {str(e)}")
+            self.logger.error(f"处理部分事件失败: {str(e)}")
             return False
 
 
@@ -239,7 +244,7 @@ class CosmicPipeline:
             # 检查完整输出文件是否已存在
             full_file_name = f"{output_path}/{FILE_NAME['cosmic_table']}"
             if os.path.exists(full_file_name):
-                print(f"COSMIC表格文件已存在，跳过处理: {full_file_name}")
+                self.logger.info(f"COSMIC表格文件已存在，跳过处理: {full_file_name}")
                 return True
 
             # 拆分JSON为多个事件部分
@@ -278,7 +283,7 @@ class CosmicPipeline:
             return True
 
         except Exception as e:
-            print(f"生成表格失败: {str(e)}")
+            self.logger.error(f"生成表格失败: {str(e)}")
             return False
 
     def _process_file(self, input_path: str, developer: str):
@@ -299,6 +304,16 @@ class CosmicPipeline:
                 context.success = False
                 break
 
+    def _print_progress(self, current: int, total: int):
+        """打印进度条"""
+        progress = current / total
+        bar_length = 40
+        filled = int(bar_length * progress)
+        bar = '=' * filled + ' ' * (bar_length - filled)
+        print(f'\r[{bar}] {current}/{total} ({progress:.0%})', end='')
+        if current == total:
+            print()
+
     def run(self):
         """启动处理流程"""
         # 获取所有需求文件(仅处理白名单开发人员)
@@ -313,32 +328,42 @@ class CosmicPipeline:
                     if any(file.endswith(ext) for ext in INPUT_FILE_EXTENSIONS):
                         req_files.append((os.path.join(dev_dir, file), developer))
 
+        total_files = len(req_files)
+        if total_files == 0:
+            self.logger.info("没有找到需要处理的需求文件")
+            return
+
+        self.logger.info(f"开始处理 {total_files} 个需求文件...")
+        completed = 0
+
         # 使用线程池处理
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(self._process_file, path, dev) for path, dev in req_files]
+            futures = {executor.submit(self._process_file, path, dev): (path, dev) for path, dev in req_files}
+            
+            # 初始化进度条
+            self._print_progress(0, total_files)
+            
             for future in as_completed(futures):
                 future.result()
+                completed += 1
+                self._print_progress(completed, total_files)
 
     # 以下为工具方法(需实现)
     def _extract_json_from_text(self, text: str) -> str:
         """从文本提取JSON"""
-        # 实现JSON提取逻辑
-        return extract_json_from_text(text)
+        return self.json_extractor(text)
 
     def _validate_requirement_analysis_json(self, json_str: str) -> Tuple[bool, str]:
         """验证需求分析JSON"""
-        # 实现验证逻辑
-        return validate_requirement_analysis_json(json_str)
+        return self.json_validator(json_str)
 
     def _extract_table_from_text(self, text: str) -> str:
         """从文本提取表格"""
-        # 实现表格提取逻辑
-        return extract_table_from_text(text)
+        return self.table_extractor(text)
 
     def _validate_cosmic_table(self, markdown_table_str: str, table_rows: Optional[int] = None) -> Tuple[bool, str]:
         """验证COSMIC表格"""
-        # 实现验证逻辑
-        return validate_cosmic_table(markdown_table_str, table_rows)
+        return self.table_validator(markdown_table_str, table_rows)
 
     def _extract_empty(self, text: str) -> str:
         return text

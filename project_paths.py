@@ -2,7 +2,7 @@ from typing import List
 
 # 配置开发人员白名单
 DEVELOPERS: List[str] = [
-    "杨小扩",
+    "杨扩威",
     "张三",
     "李四"
 ]
@@ -10,8 +10,9 @@ DEVELOPERS: List[str] = [
 # 模板文件路径
 TEMPLATE_PATHS = {
     "requirement_extraction": "ai_promote/requirement_extraction.md",
-    "requirement_analysis": "ai_promote/requirement_analysis.md",
-    "cosmic_table": "ai_promote/create_cosmic_table.md"
+    "requirement_analysis": "ai_promote/requirement_analysis.md", 
+    "cosmic_table": "ai_promote/create_cosmic_table.md",
+    "output_base_dir": "out_put_files"
 }
 
 # 输出文件后缀

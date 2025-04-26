@@ -20,7 +20,7 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
         "重置", "分页", "排序", "适配", "开发", "部署", "迁移", "安装",
         "存储", "缓存", "校验", "验证", "是否", "判断", "组装报文", "构建报文",
         '临时表', '内存', '缓存', '检验', '校验', '分析',
-        '判断', '解析', '后台', '数据库读取', '接口返回', '接口调用', '生成一条'
+        '判断', '解析', '后台', '数据库读取', '接口返回', '接口调用', '生成一条','维护','配置','执行'
         # 注意: 保存/输入/读取/输出/存储/缓存 在特定上下文可能允许，但提示词已列为避免，
         # 这里按最严格的“绝对禁止”列表来校验，如果需要放宽，可以从这里移除。
     }
@@ -125,6 +125,7 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
         if not (min_expected_furs <= num_furs <= max_expected_furs):
              errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能用户需求(FUR)数量应在 {min_expected_furs}-{max_expected_furs} 个左右 (每个FUR约{FUR_WORKLOAD_TARGET}工作量)。当前数量为 {num_furs} 个，请检查FUR的拆分是否合理。")
 
+    fb_flag = False
     for i, fur in enumerate(furs):
         if not isinstance(fur, dict):
             errors.append(f"JSON校验不通过，功能用户需求列表中的第 {i+1} 项不是有效的JSON对象格式。")
@@ -243,11 +244,16 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
                              found_forbidden.append(word)
                      if found_forbidden:
                          errors.append(f"JSON校验不通过，{process_ref} 的名称 '{process_name}' 中包含了禁用词: '{', '.join(found_forbidden)}'。请修改名称，避免使用这些词语。")
+                         fb_flag = True
                      # 校验禁用模式 (日志)
                      for pattern in FORBIDDEN_PROCESS_PATTERNS:
                          if re.search(pattern, process_name):
                              errors.append(f"JSON校验不通过，{process_ref} 的名称 '{process_name}' 似乎与日志记录有关，这通常不应作为独立的功能过程。请检查是否应移除或合并。")
                              break # 找到一个匹配就够了
+
+
+    if fb_flag:
+       errors.append(f'功能过程 **禁用词**：{"，".join(FORBIDDEN_PROCESS_WORDS)}')
 
     # 5. 校验功能过程总数与工作量的关系
     if workload > 0:
@@ -255,7 +261,13 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
         min_expected_processes = round(target_processes * (1 - PROCESS_COUNT_FLUCTUATION))
         max_expected_processes = round(target_processes * (1 + PROCESS_COUNT_FLUCTUATION))
         if not (min_expected_processes <= total_process_count <= max_expected_processes):
-            errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能过程总数量应在 {min_expected_processes}-{max_expected_processes} 个左右 (约为工作量的1/3)。当前总共识别出 {total_process_count} 个功能过程。请检查功能过程的拆分和合并是否合理，以符合总量要求。")
+            if total_process_count < min_expected_processes:
+                diff = min_expected_processes - total_process_count
+                errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能过程总数量应在 {min_expected_processes}-{max_expected_processes} 个左右 (约为工作量的1/3)。当前总共识别出 {total_process_count} 个功能过程，需要增加 {diff} 个功能过程。请检查功能过程的拆分是否足够细化。")
+            else:
+                diff = total_process_count - max_expected_processes
+                errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能过程总数量应在 {min_expected_processes}-{max_expected_processes} 个左右 (约为工作量的1/3)。当前总共识别出 {total_process_count} 个功能过程，需要减少 {diff} 个功能过程。请检查功能过程的合并是否合理。")
 
+            errors.append('**推荐内容**: **多写查询类的功能过程**，少写操作类的功能过程')
     # 返回结果
     return not errors, "\n".join(errors)

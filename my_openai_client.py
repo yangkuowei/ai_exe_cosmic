@@ -41,18 +41,18 @@ class ThreadLocalChatHistoryManager:
                     log_file = os.path.join(logs_dir, f'app_{hour_timestamp}.log')
 
                     logger = logging.getLogger(f'{__name__}.hourly')
-                    logger.setLevel(logging.DEBUG)
+                    logger.setLevel(logging.WARN)
 
                     if not logger.handlers:
                         file_handler = logging.FileHandler(log_file)
-                        file_handler.setLevel(logging.DEBUG)
+                        file_handler.setLevel(logging.WARN)
                         file_handler.setFormatter(logging.Formatter(
                             '%(asctime)s [Thread-%(thread)d] - %(levelname)s - %(message)s'
                         ))
                         logger.addHandler(file_handler)
 
                         console_handler = logging.StreamHandler()
-                        console_handler.setLevel(logging.DEBUG)
+                        console_handler.setLevel(logging.WARN)
                         console_handler.setFormatter(logging.Formatter(
                             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
                         ))
@@ -263,11 +263,11 @@ def process_stream_response(completion) -> Tuple[str, str]:
         if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
             reasoning_content.append(delta.reasoning_content)
             # logger.debug(f"推理内容: {delta.reasoning_content}")
-            print(delta.reasoning_content, end='', flush=True)  # 实时流式输出到控制台
+            #print(delta.reasoning_content, end='', flush=True)  # 实时流式输出到控制台
 
         if delta.content:
             answer_content.append(delta.content)
-            print(delta.content, end='', flush=True)  # 实时流式输出到控制台
+            #print(delta.content, end='', flush=True)  # 实时流式输出到控制台
 
     return ''.join(reasoning_content), ''.join(answer_content)
 
