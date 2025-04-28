@@ -13,7 +13,7 @@ from decorators import ai_processor
 # 配置基础日志
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s [Thread-%(thread)d] - %(name)s - %(levelname)s - %(message)s'
 )
 base_logger = logging.getLogger(__name__)
 T = TypeVar('T')
@@ -41,20 +41,20 @@ class ThreadLocalChatHistoryManager:
                     log_file = os.path.join(logs_dir, f'app_{hour_timestamp}.log')
 
                     logger = logging.getLogger(f'{__name__}.hourly')
-                    logger.setLevel(logging.WARN)
+                    logger.setLevel(logging.INFO)
 
                     if not logger.handlers:
                         file_handler = logging.FileHandler(log_file)
-                        file_handler.setLevel(logging.WARN)
+                        file_handler.setLevel(logging.INFO)
                         file_handler.setFormatter(logging.Formatter(
                             '%(asctime)s [Thread-%(thread)d] - %(levelname)s - %(message)s'
                         ))
                         logger.addHandler(file_handler)
 
                         console_handler = logging.StreamHandler()
-                        console_handler.setLevel(logging.WARN)
+                        console_handler.setLevel(logging.INFO)
                         console_handler.setFormatter(logging.Formatter(
-                            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                            '%(asctime)s [Thread-%(thread)d] - %(name)s - %(levelname)s - %(message)s'
                         ))
                         logger.addHandler(console_handler)
 
@@ -190,6 +190,7 @@ class OpenAIClient:
                 reasoning_content, full_answer = process_stream_response(response)
                 history_manager.add_session_history(session_id, {"role": "assistant", "content": full_answer})
 
+                history_manager.local.logger.info(f"收到AI响应:\n{full_answer}")
                 history_manager.local.logger.info("收到AI响应 (长度: %d 字符)", len(full_answer))
 
                 # 提取和验证结果
@@ -262,14 +263,19 @@ def process_stream_response(completion) -> Tuple[str, str]:
 
         if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
             reasoning_content.append(delta.reasoning_content)
-            # logger.debug(f"推理内容: {delta.reasoning_content}")
+            # if len(reasoning_content) % 1000 == 0:
+            #     history_manager.local.logger.info('AI正在思考中...')
             #print(delta.reasoning_content, end='', flush=True)  # 实时流式输出到控制台
 
-        if delta.content:
+        if hasattr(delta, 'content') and delta.content:
             answer_content.append(delta.content)
+            # if len(answer_content) % 1000 == 0:
+            #     history_manager.local.logger.info('AI正在回复中...')
             #print(delta.content, end='', flush=True)  # 实时流式输出到控制台
 
+
     return ''.join(reasoning_content), ''.join(answer_content)
+
 
 @ai_processor(max_retries=3)
 def call_ai(

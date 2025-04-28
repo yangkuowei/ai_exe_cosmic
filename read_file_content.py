@@ -19,13 +19,15 @@ import subprocess
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARN,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('app.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
+# 显式设置root logger级别
+logging.getLogger().setLevel(logging.WARN)
 
 def read_file_content(file_path: Union[str, Path]) -> Optional[str]:
     """读取文件内容并返回去除首尾空格的字符串
@@ -452,10 +454,10 @@ def process_text(content):
     if len(occurrences) >= 2:
         # 第二次出现的位置是排序后列表的第二个元素 (索引为 1)
         truncation_point = occurrences[1]
-        #print(f"在位置 {truncation_point} 找到第 2 个标记（来自列表 {markers}）。")
+        logging.debug(f"在位置 {truncation_point} 找到第 2 个标记（来自列表 {markers}）。")
         content_to_process = content[:truncation_point]
     else:
-        print(f"警告：在文件  中找到的标记（来自列表 {markers}）总数少于 2 个。将不执行截断。")
+        logging.warning(f"在文件  中找到的标记（来自列表 {markers}）总数少于 2 个。将不执行截断。")
         # content_to_process 保持为原始内容
 
     # 删除特殊字符 (无论是否截断，都执行此操作)
@@ -479,11 +481,11 @@ def process_text(content):
             # 保留开始行之前和结束行之后的内容
             final_lines = lines[:start_line] + lines[end_line:]
             processed_content = "".join(final_lines)
-            #print(f"已删除从第{start_line+1}行到第{end_line}行的内容")
+            logging.debug(f"已删除从第{start_line+1}行到第{end_line}行的内容")
         else:
-            print("警告：'客户需求规格说明书'出现在第二个'背景描述'之后，不执行删除")
+            logging.warning("'客户需求规格说明书'出现在第二个'背景描述'之后，不执行删除")
     else:
-        print("未找到足够的匹配行，不执行删除操作")
+        logging.warning("未找到足够的匹配行，不执行删除操作")
 
     return processed_content
 
@@ -499,7 +501,7 @@ import shutil # 用于查找可执行文件和删除目录
 try:
     from docx import Document
 except ImportError:
-    print("错误: 需要 'python-docx' 库。请运行 'pip install python-docx'")
+    logging.error("需要 'python-docx' 库。请运行 'pip install python-docx'")
     exit(1) # 核心依赖缺失，直接退出
 
 # --- 文本处理函数 (示例) ---
@@ -524,21 +526,21 @@ def _convert_doc_to_docx_linux(doc_path: str, output_dir: str) -> str | None:
         成功时返回转换后的 .docx 文件完整路径，失败时返回 None。
     """
     if not _check_libreoffice():
-        print("错误: 在 Linux 上转换 .doc 文件需要安装 LibreOffice。")
-        print("请运行: sudo apt-get update && sudo apt-get install libreoffice")
+        logging.error("在 Linux 上转换 .doc 文件需要安装 LibreOffice。")
+        logging.error("请运行: sudo apt-get update && sudo apt-get install libreoffice")
         return None
 
     abs_doc_path = os.path.abspath(doc_path)
     abs_output_dir = os.path.abspath(output_dir)
 
     if not os.path.exists(abs_doc_path):
-        print(f"错误: 输入文件未找到: {abs_doc_path}")
+        logging.error(f"输入文件未找到: {abs_doc_path}")
         return None
     if not os.path.isdir(abs_output_dir):
-         print(f"错误: 输出目录不存在: {abs_output_dir}")
+         logging.error(f"输出目录不存在: {abs_output_dir}")
          return None
 
-    print(f"Linux: 使用 LibreOffice 转换: {abs_doc_path} -> {abs_output_dir}")
+    logging.debug(f"Linux: 使用 LibreOffice 转换: {abs_doc_path} -> {abs_output_dir}")
     try:
         # 构建 LibreOffice 命令
         # 使用明确的过滤器通常更可靠
@@ -551,16 +553,16 @@ def _convert_doc_to_docx_linux(doc_path: str, output_dir: str) -> str | None:
             '--outdir', abs_output_dir, # 指定输出目录
             abs_doc_path # 输入文件
         ]
-        print(f"执行命令: {' '.join(command)}")
+        logging.debug(f"执行命令: {' '.join(command)}")
 
         # 执行转换命令，设置超时（例如 60 秒）
         result = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False) # check=False 手动检查
 
         # 检查命令执行结果
         if result.returncode != 0:
-            print(f"错误: LibreOffice 转换失败。返回码: {result.returncode}")
-            print(f"错误信息 (stderr):\n{result.stderr}")
-            print(f"输出信息 (stdout):\n{result.stdout}")
+            logging.error(f"LibreOffice 转换失败。返回码: {result.returncode}")
+            logging.error(f"错误信息 (stderr):\n{result.stderr}")
+            logging.error(f"输出信息 (stdout):\n{result.stdout}")
             return None
 
         # 构造预期的输出文件名
@@ -569,17 +571,17 @@ def _convert_doc_to_docx_linux(doc_path: str, output_dir: str) -> str | None:
 
         # 检查输出文件是否存在
         if os.path.exists(expected_docx_path):
-            print(f"LibreOffice 转换成功: {expected_docx_path}")
+            logging.debug(f"LibreOffice 转换成功: {expected_docx_path}")
             return expected_docx_path
         else:
-            print(f"错误: LibreOffice 命令执行成功，但未找到预期的输出文件: {expected_docx_path}")
-            print(f"请检查输出目录 '{abs_output_dir}' 的内容和权限。")
-            print(f"LibreOffice stdout:\n{result.stdout}")
-            print(f"LibreOffice stderr:\n{result.stderr}")
+            logging.error(f"LibreOffice 命令执行成功，但未找到预期的输出文件: {expected_docx_path}")
+            logging.error(f"请检查输出目录 '{abs_output_dir}' 的内容和权限。")
+            logging.error(f"LibreOffice stdout:\n{result.stdout}")
+            logging.error(f"LibreOffice stderr:\n{result.stderr}")
             return None
 
     except subprocess.TimeoutExpired:
-        print(f"错误: LibreOffice 转换超时 ({60} 秒)。文件可能过大或 LibreOffice 进程卡住。")
+        logging.error(f"LibreOffice 转换超时 ({60} 秒)。文件可能过大或 LibreOffice 进程卡住。")
         # (可选) 尝试杀死可能残留的 soffice 进程
         # import psutil
         # for proc in psutil.process_iter(['pid', 'name']):
@@ -592,10 +594,10 @@ def _convert_doc_to_docx_linux(doc_path: str, output_dir: str) -> str | None:
         #             pass # 忽略错误
         return None
     except FileNotFoundError:
-         print("错误: 'libreoffice' 命令未找到。请确保 LibreOffice 已安装并添加到系统 PATH。")
+         logging.error("'libreoffice' 命令未找到。请确保 LibreOffice 已安装并添加到系统 PATH。")
          return None
     except Exception as e:
-        print(f"Linux 转换过程中发生未知错误: {e}")
+        logging.error(f"Linux 转换过程中发生未知错误: {e}")
         return None
 
 # --- Windows .doc 转 .docx (使用 win32com) ---
@@ -618,13 +620,13 @@ def _convert_doc_to_docx_windows(doc_path: str, docx_path: str) -> str | None:
             # Word 文件格式常量 (wdSaveFormat)
             WD_FORMAT_DOCX = 16  # wdFormatXMLDocument
         except ImportError:
-            print("警告: Windows 平台需要 'pywin32' 库。请运行 'pip install pywin32'")
+            logging.warning("Windows 平台需要 'pywin32' 库。请运行 'pip install pywin32'")
             win32 = None  # 标记为不可用
     else:
         win32 = None  # 在非 Windows 平台上标记为不可用
 
     if not win32:
-        print("错误: Windows 转换需要 'pywin32' 库且 Word 已安装。")
+        logging.error("Windows 转换需要 'pywin32' 库且 Word 已安装。")
         return None
 
     word = None
@@ -633,10 +635,10 @@ def _convert_doc_to_docx_windows(doc_path: str, docx_path: str) -> str | None:
     abs_docx_path = os.path.abspath(docx_path)
 
     if not os.path.exists(abs_doc_path):
-        print(f"错误: 输入文件未找到: {abs_doc_path}")
+        logging.error(f"输入文件未找到: {abs_doc_path}")
         return None
 
-    print(f"Windows: 使用 Word COM 转换: {abs_doc_path} -> {abs_docx_path}")
+    logging.debug(f"Windows: 使用 Word COM 转换: {abs_doc_path} -> {abs_docx_path}")
 
     try:
         pythoncom.CoInitialize() # 初始化 COM 环境
@@ -646,59 +648,59 @@ def _convert_doc_to_docx_windows(doc_path: str, docx_path: str) -> str | None:
              word = win32.gencache.EnsureDispatch('Word.Application')
         except AttributeError as e:
              if 'CLSIDToClassMap' in str(e):
-                 print("检测到 win32com 缓存问题。尝试清理缓存...")
+                 logging.debug("检测到 win32com 缓存问题。尝试清理缓存...")
                  # 定位并删除 gen_py 目录
                  gencache_path = os.path.join(os.path.dirname(pythoncom.__file__), '..', 'win32com', 'gen_py')
                  if os.path.exists(gencache_path):
-                     print(f"删除缓存目录: {gencache_path}")
+                     logging.debug(f"删除缓存目录: {gencache_path}")
                      shutil.rmtree(gencache_path, ignore_errors=True)
                      # 重新尝试 Dispatch
-                     print("缓存已清理，重试 Dispatch...")
+                     logging.debug("缓存已清理，重试 Dispatch...")
                      word = win32.Dispatch('Word.Application') # 使用 Dispatch 避免再次触发 EnsureDispatch 的缓存生成
                  else:
-                     print(f"缓存目录未找到: {gencache_path}")
+                     logging.debug(f"缓存目录未找到: {gencache_path}")
                      raise e # 如果找不到缓存目录，重新抛出原始错误
              else:
                  raise e # 抛出其他 AttributeError
         except Exception as e:
-            print(f"初始化 Word Application 时出错: {e}")
+            logging.error(f"初始化 Word Application 时出错: {e}")
             raise # 重新抛出未能处理的异常
 
         word.Visible = False
         word.DisplayAlerts = False
 
-        print(f"正在打开文档: {abs_doc_path}")
+        logging.info(f"正在打开文档: {abs_doc_path}")
         doc = word.Documents.Open(abs_doc_path, ReadOnly=True)
 
-        print(f"正在另存为 .docx 格式: {abs_docx_path}")
+        logging.info(f"正在另存为 .docx 格式: {abs_docx_path}")
         doc.SaveAs(abs_docx_path, FileFormat=WD_FORMAT_DOCX)
 
-        print("Word COM 转换成功！")
+        logging.info("Word COM 转换成功！")
         return abs_docx_path
 
     except pythoncom.com_error as e:
-        print(f"Windows 转换过程中发生 COM 错误: {e}")
+        logging.error(f"Windows 转换过程中发生 COM 错误: {e}")
         # (hresult, strerror, excepinfo, argerror) = e.args
         # print(f"HRESULT: {hresult}, Error: {strerror}")
         # if excepinfo: print(f"Exception Info: {excepinfo}")
         return None
     except Exception as e:
-        print(f"Windows 转换过程中发生未知错误: {e}")
+        logging.error(f"Windows 转换过程中发生未知错误: {e}")
         return None
     finally:
         # 确保资源被释放
         if doc:
             try:
                 doc.Close(False)
-                print("文档已关闭。")
+                logging.debug("文档已关闭。")
             except pythoncom.com_error as e:
-                print(f"关闭文档时发生 COM 错误: {e}")
+                logging.error(f"关闭文档时发生 COM 错误: {e}")
         if word:
             try:
                 word.Quit()
-                print("Word 应用已退出。")
+                logging.debug("Word 应用已退出。")
             except pythoncom.com_error as e:
-                print(f"退出 Word 时发生 COM 错误: {e}")
+                logging.error(f"退出 Word 时发生 COM 错误: {e}")
         # 仅在初始化成功后才反初始化
         if 'pythoncom' in locals() and hasattr(pythoncom, 'CoUninitialize'):
              pythoncom.CoUninitialize()
@@ -731,13 +733,13 @@ def read_word_document(file_path: str) -> str:
 
     try:
         if file_ext == '.docx':
-            print(f"直接读取 .docx 文件: {original_path}")
+            logging.info(f"直接读取 .docx 文件: {original_path}")
             docx_to_read = original_path
         elif file_ext == '.doc':
-            print(f"检测到 .doc 文件，需要转换: {original_path}")
+            logging.info(f"检测到 .doc 文件，需要转换: {original_path}")
             # 创建一个临时目录来存放转换后的文件
             temp_dir = tempfile.mkdtemp(prefix="wordconv_")
-            print(f"创建临时目录: {temp_dir}")
+            logging.info(f"创建临时目录: {temp_dir}")
             # 构造临时的 .docx 文件名
             base_name = os.path.splitext(os.path.basename(original_path))[0]
             temp_docx_filename = f"{base_name}_{int(time.time())}.docx"
@@ -773,7 +775,7 @@ def read_word_document(file_path: str) -> str:
         if not docx_to_read:
              raise RuntimeError("未能确定要读取的 .docx 文件路径。")
 
-        print(f"开始读取 .docx 内容: {docx_to_read}")
+        logging.info(f"开始读取 .docx 内容: {docx_to_read}")
         content = ""
         try:
             doc = Document(docx_to_read)
@@ -782,7 +784,7 @@ def read_word_document(file_path: str) -> str:
             paragraphs = [p.text for p in doc.paragraphs]
             # 简单地用换行符连接段落
             content = '\n'.join(paragraphs)
-            print(".docx 文件内容读取成功。")
+            logging.info(".docx 文件内容读取成功。")
         except Exception as e:
             raise RuntimeError(f"读取 .docx 文件 '{docx_to_read}' 时失败: {e}") from e
 
@@ -794,13 +796,13 @@ def read_word_document(file_path: str) -> str:
         if temp_docx_path and os.path.exists(temp_docx_path):
              try:
                  os.remove(temp_docx_path)
-                 print(f"已删除临时 .docx 文件: {temp_docx_path}")
+                 logging.info(f"已删除临时 .docx 文件: {temp_docx_path}")
              except OSError as e:
-                 print(f"警告: 删除临时文件失败: {temp_docx_path}, 错误: {e}")
+                 logging.warning(f"删除临时文件失败: {temp_docx_path}, 错误: {e}")
         # 然后删除整个临时目录（如果创建了）
         if temp_dir and os.path.exists(temp_dir):
             try:
                 shutil.rmtree(temp_dir)
-                print(f"已删除临时目录: {temp_dir}")
+                logging.info(f"已删除临时目录: {temp_dir}")
             except OSError as e:
-                print(f"警告: 删除临时目录失败: {temp_dir}, 错误: {e}")
+                logging.warning(f"删除临时目录失败: {temp_dir}, 错误: {e}")

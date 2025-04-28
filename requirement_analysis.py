@@ -7,6 +7,7 @@ from pathlib import Path
 import json
 
 from ai_common import load_model_config
+from decorators import ai_processor
 from project_paths import DEVELOPERS, TEMPLATE_PATHS, INPUT_FILE_EXTENSIONS, FILE_NAME
 from my_openai_client import call_ai
 from read_file_content import read_word_document, save_content_to_file
@@ -20,7 +21,8 @@ class ProcessingContext:
     """处理上下文，管理单个需求文件的全流程状态"""
 
     def __init__(self, input_path: str, developer: str):
-        self.input_path = input_path  # 输入文件路径
+        self.original_input_path = input_path  # 原始输入文件路径(不做处理)
+        self.input_path = input_path  # 输入文件路径(后续会处理)
         self.developer = developer  # 开发人员目录名
         self.stem = Path(input_path).stem  # 文件名(无后缀)
         self.stage_data = {}  # 各阶段产出数据
@@ -49,6 +51,7 @@ class CosmicPipeline:
         # 初始化日志
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
+        self.logger.propagate = False  # 阻止传播到root logger
         handler = logging.StreamHandler()
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
@@ -67,12 +70,16 @@ class CosmicPipeline:
 
     def _init_processing(self, context: ProcessingContext) -> bool:
         """初始化处理"""
-        context.stage_data['output_dir'] = f"{self.output_base_dir}/{context.developer}"
+        context.stage_data['output_dir'] = os.path.join(self.output_base_dir, context.developer)
         os.makedirs(context.stage_data['output_dir'], exist_ok=True)
         return True
 
     def _pre_process(self, context: ProcessingContext) -> bool:
-        """前置处理(预留)"""
+        # 处理stem部分
+        context.stem = Path(context.input_path).stem.strip()
+        # 更新input_path为处理后的路径(去掉扩展名前后的空格)
+        path_obj = Path(context.original_input_path)
+        context.input_path = str(path_obj.with_name(context.stem + path_obj.suffix))
         return True
 
     def _post_process(self, context: ProcessingContext) -> bool:
@@ -84,7 +91,7 @@ class CosmicPipeline:
         requirement_dir = Path(context.input_path).stem
 
         # 构建完整输出路径
-        output_path = f"{context.stage_data['output_dir']}/{requirement_dir}"
+        output_path = os.path.join(context.stage_data['output_dir'], requirement_dir)
         os.makedirs(output_path, exist_ok=True)
 
         # 检查输出文件是否已存在
@@ -95,15 +102,15 @@ class CosmicPipeline:
                 context.stage_data['requirement_extraction'] = f.read()
             return True
 
-            # 读取需求文档内容
-        content = read_word_document(context.input_path)
+            # 读取需求文档内容(使用原始路径)
+        content = read_word_document(context.original_input_path)
         # 调用AI分析
         text = call_ai(
             ai_prompt=self.requirement_extraction_prompt,
             requirement_content=content,
-            extractor=self._extract_empty,
+            extractor=self._extract_text,
             validator=self._validate_empty,
-            config=load_model_config('aliyun')
+            config=load_model_config("aliyun")
         )
         # 保存结果
         save_content_to_file(
@@ -123,7 +130,7 @@ class CosmicPipeline:
             requirement_dir = Path(context.input_path).stem
 
             # 构建完整输出路径
-            output_path = f"{context.stage_data['output_dir']}/{requirement_dir}"
+            output_path = os.path.join(context.stage_data['output_dir'], requirement_dir)
             os.makedirs(output_path, exist_ok=True)
 
             # 检查输出文件是否已存在
@@ -238,7 +245,7 @@ class CosmicPipeline:
         try:
             # 构建完整输出路径
             requirement_dir = Path(context.input_path).stem
-            output_path = f"{context.stage_data['output_dir']}/{requirement_dir}"
+            output_path = os.path.join(context.stage_data['output_dir'], requirement_dir)
             os.makedirs(output_path, exist_ok=True)
 
             # 检查完整输出文件是否已存在
@@ -310,10 +317,9 @@ class CosmicPipeline:
         bar_length = 40
         filled = int(bar_length * progress)
         bar = '=' * filled + ' ' * (bar_length - filled)
-        print(f'\r[{bar}] {current}/{total} ({progress:.0%})', end='')
-        if current == total:
-            print()
+        self.logger.info(f'\r[{bar}] {current}/{total} ({progress:.0%})')
 
+    @ai_processor(max_retries=1)
     def run(self):
         """启动处理流程"""
         # 获取所有需求文件(仅处理白名单开发人员)
@@ -365,8 +371,11 @@ class CosmicPipeline:
         """验证COSMIC表格"""
         return self.table_validator(markdown_table_str, table_rows)
 
-    def _extract_empty(self, text: str) -> str:
-        return text
+    def _extract_text(self, text: str) -> str:
+        """从AI回复中提取```text ```标记之间的内容"""
+        import re
+        match = re.search(r'```text\n(.*?)\n```', text, re.DOTALL)
+        return match.group(1) if match else text
 
     def _validate_empty(self, text: str) -> Tuple[bool, str]:
         """验证COSMIC表格"""

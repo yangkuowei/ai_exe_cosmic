@@ -3,7 +3,13 @@ import time
 import logging
 from typing import Callable
 
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [Thread-%(thread)d] - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 def ai_processor(max_retries: int = 5, initial_delay: float = 10.0, max_delay: float = 30.0):
     """AI处理核心装饰器，集成重试、退避、日志和性能监控
@@ -19,7 +25,7 @@ def ai_processor(max_retries: int = 5, initial_delay: float = 10.0, max_delay: f
             stream_callback = kwargs.get('stream_callback')
             last_error = None
             current_delay = initial_delay
-            
+            logger.info(f"开始处理 {func.__name__}")
             for attempt in range(1, max_retries + 1):
                 try:
                     start_time = time.monotonic()
