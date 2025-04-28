@@ -2,7 +2,7 @@ from typing import List
 
 # 配置开发人员白名单
 DEVELOPERS: List[str] = [
-    "杨扩威",
+    "杨小扩",
     "张三",
     "李四"
 ]
@@ -12,6 +12,7 @@ TEMPLATE_PATHS = {
     "requirement_extraction": "ai_promote/requirement_extraction.md",
     "requirement_analysis": "ai_promote/requirement_analysis.md", 
     "cosmic_table": "ai_promote/create_cosmic_table.md",
+    "necessity": "ai_promote/create_necessity.md",
     "output_base_dir": "out_put_files"
 }
 
@@ -19,7 +20,8 @@ TEMPLATE_PATHS = {
 FILE_NAME = {
     "requirement_extraction": "requirement_extraction.txt",
     "requirement_json": "requirement_analysis.json",
-    "cosmic_table": "markdown_table.md"
+    "cosmic_table": "markdown_table.md",
+    "necessity": "necessity.txt"
 }
 
 # 支持的输入文件格式

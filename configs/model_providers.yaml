@@ -1,6 +1,6 @@
 # 默认使用的模型提供商（可选）
 # qwen2.5-72b-instruct qwq-32b QwQ-32B-AWQ  Qwen2.5-14B-Instruct-1M
-default_provider: nvidia
+default_provider: aliyun
 
 providers:
   302:

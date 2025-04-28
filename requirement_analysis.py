@@ -43,6 +43,7 @@ class CosmicPipeline:
     ):
         self.max_workers = max_workers
         self.model_config = load_model_config()
+        self.load_model_config_aliyun = load_model_config("aliyun")
         self.json_extractor = json_extractor
         self.table_extractor = table_extractor 
         self.json_validator = json_validator
@@ -61,6 +62,7 @@ class CosmicPipeline:
         self.requirement_extraction_prompt = self._read_prompt(TEMPLATE_PATHS["requirement_extraction"])
         self.requirement_prompt = self._read_prompt(TEMPLATE_PATHS["requirement_analysis"])
         self.cosmic_prompt = self._read_prompt(TEMPLATE_PATHS["cosmic_table"])
+        self.necessity_prompt = self._read_prompt(TEMPLATE_PATHS["necessity"])
         self.output_base_dir = TEMPLATE_PATHS.get("output_base_dir", "out_put_files")
 
     def _read_prompt(self, path: str) -> str:
@@ -110,7 +112,7 @@ class CosmicPipeline:
             requirement_content=content,
             extractor=self._extract_text,
             validator=self._validate_empty,
-            config=load_model_config("aliyun")
+            config=self.load_model_config_aliyun
         )
         # 保存结果
         save_content_to_file(
@@ -168,6 +170,50 @@ class CosmicPipeline:
             self.logger.error(f"需求分析失败: {str(e)}")
             return False
 
+    def _process_necessity(self, context: ProcessingContext) -> bool:
+        """需求分析阶段"""
+        try:
+            # 从输入文件名提取需求目录名（去掉后缀）
+            requirement_dir = Path(context.input_path).stem
+
+            # 构建完整输出路径
+            output_path = os.path.join(context.stage_data['output_dir'], requirement_dir)
+            os.makedirs(output_path, exist_ok=True)
+
+            # 检查输出文件是否已存在
+            file_name = f"{output_path}/{FILE_NAME['necessity']}"
+            if os.path.exists(file_name):
+                self.logger.info(f"建设必要性分析已完成，跳过处理: {file_name}")
+                with open(file_name, 'r', encoding='utf-8') as f:
+                    context.stage_data['necessity'] = f.read()
+                return True
+
+            # 读取需求文档内容
+            content = context.stage_data['requirement_extraction']
+
+            # 调用AI分析
+            txt = call_ai(
+                ai_prompt=self.necessity_prompt,
+                requirement_content=content,
+                extractor=self._extract_text,
+                validator=self._validate_empty,
+                config=self.load_model_config_aliyun
+            )
+
+            # 保存结果
+            save_content_to_file(
+                file_name=FILE_NAME['necessity'],
+                output_dir=output_path,
+                content=txt,
+                content_type="text"
+            )
+
+            context.stage_data['necessity'] = txt
+            return True
+
+        except Exception as e:
+            self.logger.error(f"建设必要性生成失败: {str(e)}")
+            return False
     def _split_requirement_json(self, json_str: str) -> List[Dict]:
         """将需求JSON按triggeringEvents拆分为多个部分"""
         data = json.loads(json_str)
@@ -303,6 +349,7 @@ class CosmicPipeline:
             self._requirement_extraction,
             self._process_requirement_analysis,
             self._process_generate_cosmic,
+            self._process_necessity,
             self._post_process
         ]
 
