@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 from ..core.context import ProcessingContext
-from my_openai_client import call_ai
+from langchain_openai_client_v1 import call_ai
 from read_file_content import save_content_to_file
 from project_paths import FILE_NAME
 
@@ -33,7 +33,7 @@ def process_necessity(pipeline, context: ProcessingContext) -> bool:
             requirement_content=content,
             extractor=pipeline._extract_text,
             validator=pipeline._validate_empty,
-            config=pipeline.load_model_config_aliyun
+            config=pipeline.model_config
         )
 
         # 保存结果

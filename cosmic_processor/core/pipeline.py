@@ -31,8 +31,6 @@ class CosmicPipeline:
     ):
         self.max_workers = max_workers
         self.model_config = load_model_config()
-        self.load_model_config_aliyun = load_model_config("aliyun")
-        self.load_model_config_aliyun_max = load_model_config("aliyun",model_name = 'qwen-max')
         self.json_extractor = json_extractor
         self.table_extractor = table_extractor 
         self.json_validator = json_validator
@@ -40,7 +38,7 @@ class CosmicPipeline:
         
         # 初始化日志
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG)
         self.logger.propagate = False  # 阻止传播到root logger
         handler = logging.StreamHandler()
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')

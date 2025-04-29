@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from ..core.context import ProcessingContext
-from my_openai_client import call_ai
+from langchain_openai_client_v1 import call_ai
 from read_file_content import save_content_to_file
 from project_paths import FILE_NAME
 

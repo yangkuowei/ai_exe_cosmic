@@ -31,7 +31,7 @@ class ModelConfig:
     base_url: str
     model_name: str
     api_key: Optional[str] = None
-    temperature: float = 1.2
+    temperature: float = 1.3
     max_tokens: int = 8192
     timeout: float = 30.0
     max_retries: int = 3

@@ -6,7 +6,7 @@ from typing import Tuple, Dict, Any, List
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 
 from ai_common import load_model_config
-from my_openai_client import call_ai
+from langchain_openai_client_v1 import call_ai
 from validate_cosmic_table import extract_json_from_text, extract_table_from_text
 
 # --- 配置 ---

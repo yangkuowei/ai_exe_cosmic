@@ -1,22 +1,23 @@
+import json
 import logging
 import os
-from typing import Callable, Tuple, Any, Dict, List, Optional, TypeVar
-import time
-import threading
 import random
-import json
+import threading
+import time
+from typing import Callable, Tuple, Any, Optional, TypeVar
 
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.chat_history import (
     BaseChatMessageHistory,
     InMemoryChatMessageHistory,
 )
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_openai import ChatOpenAI
 
 from ai_common import ModelConfig
+from decorators import ai_processor
 
 # 配置基础控制台日志
 logging.basicConfig(
@@ -218,7 +219,7 @@ class LangChainCosmicTableGenerator:
         session_id = f"session_{int(time.time())}_{random.randint(10000, 99999)}"
         config = {"configurable": {"session_id": session_id}}
 
-        #self.chat.callbacks = [self._create_stream_callback(session_id)]
+        self.chat.callbacks = [self._create_stream_callback(session_id)]
 
         for attempt in range(max_chat_count + 1):
             try:
@@ -314,7 +315,7 @@ class LangChainCosmicTableGenerator:
 3.  对于已修改的内容，**无需** 添加任何关于修改位置或修改内容的备注信息。
 
 """
-
+@ai_processor(max_retries=3)
 def call_ai(
         ai_prompt: str,
         requirement_content: str,
