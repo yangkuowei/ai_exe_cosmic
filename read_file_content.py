@@ -648,17 +648,17 @@ def _convert_doc_to_docx_windows(doc_path: str, docx_path: str) -> str | None:
              word = win32.gencache.EnsureDispatch('Word.Application')
         except AttributeError as e:
              if 'CLSIDToClassMap' in str(e):
-                 logging.debug("检测到 win32com 缓存问题。尝试清理缓存...")
+                 logging.error("检测到 win32com 缓存问题。尝试清理缓存...")
                  # 定位并删除 gen_py 目录
                  gencache_path = os.path.join(os.path.dirname(pythoncom.__file__), '..', 'win32com', 'gen_py')
                  if os.path.exists(gencache_path):
-                     logging.debug(f"删除缓存目录: {gencache_path}")
+                     logging.error(f"删除缓存目录: {gencache_path}")
                      shutil.rmtree(gencache_path, ignore_errors=True)
                      # 重新尝试 Dispatch
-                     logging.debug("缓存已清理，重试 Dispatch...")
+                     logging.error("缓存已清理，重试 Dispatch...")
                      word = win32.Dispatch('Word.Application') # 使用 Dispatch 避免再次触发 EnsureDispatch 的缓存生成
                  else:
-                     logging.debug(f"缓存目录未找到: {gencache_path}")
+                     logging.error(f"缓存目录未找到: {gencache_path}")
                      raise e # 如果找不到缓存目录，重新抛出原始错误
              else:
                  raise e # 抛出其他 AttributeError

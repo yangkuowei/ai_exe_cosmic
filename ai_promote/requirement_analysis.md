@@ -21,7 +21,7 @@
         "customerRequirementWorkload": 100, // 示例：客户需求工作量，整数
         "functionalUserRequirements": [
           {
-            "description": "功能用户需求1的描述 (10-40字)",
+            "description": "功能用户需求1的描述 (10-40字)，力求使用 **口语化、易懂的业务描述语言**，避免专业术语",
             "triggeringEvents": [
               {
                 "eventDescription": "触发事件1的描述 (10-40字, 动词+对象/对象+动词)",

@@ -36,11 +36,11 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
     FUR_DESC_MAX_LEN: int = 40
 
     # 触发事件描述字数限制
-    EVENT_DESC_MIN_LEN: int = 10
+    EVENT_DESC_MIN_LEN: int = 8
     EVENT_DESC_MAX_LEN: int = 40
 
     # 功能过程名称字数限制
-    PROCESS_NAME_MIN_LEN: int = 10
+    PROCESS_NAME_MIN_LEN: int = 8
     PROCESS_NAME_MAX_LEN: int = 40
 
     # 工作量估算范围 (当无法从文本提取时)

@@ -219,7 +219,7 @@ class OpenAIClient:
 
                 # 只保存最近的记忆，中间的不重要
                 history = history_manager.get_session_history(session_id)
-                if len(history) >= 8:
+                if len(history) >= 10:
                     history_manager.remove_session_history(session_id, 2)
                     history_manager.remove_session_history(session_id, 2)
 
@@ -265,13 +265,13 @@ def process_stream_response(completion) -> Tuple[str, str]:
             reasoning_content.append(delta.reasoning_content)
             # if len(reasoning_content) % 1000 == 0:
             #     history_manager.local.logger.info('AI正在思考中...')
-            #print(delta.reasoning_content, end='', flush=True)  # 实时流式输出到控制台
+            print(delta.reasoning_content, end='', flush=True)  # 实时流式输出到控制台
 
         if hasattr(delta, 'content') and delta.content:
             answer_content.append(delta.content)
             # if len(answer_content) % 1000 == 0:
             #     history_manager.local.logger.info('AI正在回复中...')
-            #print(delta.content, end='', flush=True)  # 实时流式输出到控制台
+            print(delta.content, end='', flush=True)  # 实时流式输出到控制台
 
 
     return ''.join(reasoning_content), ''.join(answer_content)

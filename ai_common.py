@@ -51,7 +51,7 @@ class ModelConfig:
             raise ConfigurationError("\n".join(errors))
 
 
-def load_model_config(provider: str = None, config_dir: str = None) -> ModelConfig:
+def load_model_config(provider: str = None, config_dir: str = None,model_name :str = None) -> ModelConfig:
     """加载指定供应商的模型配置
 
     Args:
@@ -96,10 +96,11 @@ def load_model_config(provider: str = None, config_dir: str = None) -> ModelConf
             env_mapping.get('base_url', ''),
             provider_config.get('base_url', '')
         )
-        model_name = os.getenv(
-            env_mapping.get('model_name', ''),
-            provider_config.get('model_name', '')
-        )
+        if model_name == None:
+            model_name = os.getenv(
+                env_mapping.get('model_name', ''),
+                provider_config.get('model_name', '')
+            )
         api_key = os.getenv(env_mapping.get('api_key', ''))
 
         # 构建配置对象
