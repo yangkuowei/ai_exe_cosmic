@@ -29,45 +29,45 @@ T = TypeVar('T')
 
 class ThreadLocalChatHistoryManager:
     """聊天历史管理类，每个实例独立"""
-    
+
     def __init__(self):
         self.store = {}  # 存储会话历史
         self.logger = logging.getLogger(f'{__name__}.instance.{id(self)}')
         self.logger.setLevel(logging.DEBUG)
-        
+
         # 配置日志handler
         if not self.logger.handlers:
             logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
             os.makedirs(logs_dir, exist_ok=True)
-            
+
             hour_timestamp = time.strftime("%Y%m%d%H", time.localtime())
             log_file = os.path.join(logs_dir, f'app_{hour_timestamp}.log')
-            
+
             file_handler = logging.FileHandler(log_file)
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             ))
             self.logger.addHandler(file_handler)
-            
+
             console_handler = logging.StreamHandler()
             console_handler.setLevel(logging.DEBUG)
             console_handler.setFormatter(logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             ))
             self.logger.addHandler(console_handler)
-            
+
             self.logger.propagate = False
             self.logger.debug(f"实例 {id(self)} 已初始化")
 
     def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
         try:
             self.logger.debug(f"获取会话历史 session_id={session_id}")
-            
+
             if session_id not in self.store:
                 self.logger.debug(f"创建新的会话历史 session_id={session_id}")
                 self.store[session_id] = InMemoryChatMessageHistory()
-            
+
             return self.store[session_id]
         except Exception as e:
             self.logger.error(f"处理会话历史时出错: {str(e)}")
@@ -77,13 +77,13 @@ class ThreadLocalChatHistoryManager:
         try:
             history = self.get_session_history(session_id)
             messages = []
-            
+
             if system_prompt:
                 messages.append({
                     "role": "system",
                     "content": system_prompt,
                 })
-            
+
             for msg in history.messages:
                 messages.append({
                     "role": msg.type,
@@ -115,7 +115,7 @@ class LangChainCosmicTableGenerator:
     def __init__(self, config: ModelConfig):
         self._validate_config(config)
         self.config = config
-        
+
         self.chat = ChatOpenAI(
             openai_api_key=config.api_key,
             openai_api_base=config.base_url,
@@ -147,7 +147,7 @@ class LangChainCosmicTableGenerator:
             history_manager: Optional[ThreadLocalChatHistoryManager] = None
     ) -> Optional[T]:
         history_manager = history_manager or ThreadLocalChatHistoryManager()
-        
+
         formatted_prompt = cosmic_ai_prompt.replace("{", "{{").replace("}", "}}")
 
         prompt = ChatPromptTemplate.from_messages([
@@ -170,7 +170,7 @@ class LangChainCosmicTableGenerator:
         for attempt in range(max_chat_count + 1):
             try:
                 history_manager.logger.info(f"session_id={session_id} 开始调用AI")
-                
+
                 response = with_message_history.invoke(
                     [HumanMessage(content=requirement_content)],
                     config=config,
@@ -181,7 +181,7 @@ class LangChainCosmicTableGenerator:
                 history_manager.logger.info(f"收到AI响应内容 \n%s", full_answer)
 
                 extracted_data = extractor(full_answer)
-                
+
                 is_valid, error = validator(extracted_data)
                 if is_valid:
                     history_manager.logger.info(f"本轮AI生成内容校验通过")
@@ -210,7 +210,17 @@ class LangChainCosmicTableGenerator:
         return None
 
     def _build_retry_prompt(self, error: str) -> str:
-        return f"\n上次生成内容未通过验证：{error}\n请按提示逐点修改不通过内容，**其它内容不做改动**，然后输出完整的修改后的内容。"
+        # 确保提示清晰地要求模型修正错误并输出完整内容
+        return (
+            f"你上次生成的内容未能通过验证，具体问题如下：\n"
+            f"--- 问题开始 ---\n{error}\n--- 问题结束 ---\n\n"
+            f"请仔细阅读上述问题，并根据要求修改你上次输出的内容。\n"
+            f"**重要提示：**\n"
+            f"1.  **仅修改** 指出的问题部分。\n"
+            f"2.  保持所有 **未提及** 的内容 **完全不变**。\n"
+            f"3.  **必须** 输出 **完整** 的、修改后的内容，而不是只输出修改的部分。\n\n"
+            f"现在，请生成修正后的完整内容："
+        )
 
 @ai_processor(max_retries=3)
 def call_ai(
