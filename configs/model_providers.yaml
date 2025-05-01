@@ -1,11 +1,11 @@
 # 默认使用的模型提供商（可选）
 # qwen2.5-72b-instruct qwq-32b QwQ-32B-AWQ  Qwen2.5-14B-Instruct-1M
-default_provider: nvidia
+default_provider: 302
 
 providers:
   302:
     base_url: https://api.302.ai/v1/chat/completions
-    model_name: gemini-2.0-pro-exp-02-05
+    model_name: gemini-2.0-flash-thinking-exp-01-21
     env_mapping:
       api_key: API_302_KEY
       base_url: API_302_BASE_URL
@@ -21,7 +21,7 @@ providers:
 
   aliyun:
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    model_name: qwen3-32b
+    model_name: qwq-32b
     env_mapping:
       api_key: DASHSCOPE_API_KEY
       base_url: ALIYUN_BASE_URL

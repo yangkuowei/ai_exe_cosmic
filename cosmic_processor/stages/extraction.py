@@ -26,10 +26,10 @@ def requirement_extraction(pipeline, context: ProcessingContext) -> bool:
     # 读取需求文档内容(使用原始路径)
     content = read_word_document(context.original_input_path)
     # 调用AI分析
-    text = call_ai(
+    json_str = call_ai(
         ai_prompt=pipeline.requirement_extraction_prompt,
         requirement_content=content,
-        extractor=pipeline._extract_text,
+        extractor=pipeline._extract_json_from_text,
         validator=pipeline._validate_empty,
         config=pipeline.model_config
     )
@@ -37,9 +37,9 @@ def requirement_extraction(pipeline, context: ProcessingContext) -> bool:
     save_content_to_file(
         file_name=FILE_NAME['requirement_extraction'],
         output_dir=output_path,
-        content=text,
-        content_type="text"
+        content=json_str,
+        content_type="json"
     )
 
-    context.stage_data['requirement_extraction'] = text
+    context.stage_data['requirement_extraction'] = json_str
     return True

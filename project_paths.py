@@ -18,7 +18,7 @@ TEMPLATE_PATHS = {
 
 # 输出文件后缀
 FILE_NAME = {
-    "requirement_extraction": "requirement_extraction.txt",
+    "requirement_extraction": "requirement_extraction.json",
     "requirement_json": "requirement_analysis.json",
     "cosmic_table": "markdown_table.md",
     "necessity": "necessity.txt"

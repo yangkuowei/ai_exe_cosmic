@@ -31,7 +31,7 @@ def process_generate_cosmic(pipeline, context: ProcessingContext) -> bool:
             futures = []
             for i, event_data in enumerate(event_parts, 1):
                 if i>1:
-                    time.sleep(10)
+                    time.sleep(3)
                 futures.append(executor.submit(
                     _process_single_event,
                     pipeline, 

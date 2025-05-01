@@ -30,6 +30,7 @@ class CosmicPipeline:
         table_validator: Callable[[str, Optional[int]], Tuple[bool, str]] = validate_cosmic_table
     ):
         self.max_workers = max_workers
+        self.max_workers_analysis = max_workers
         self.model_config = load_model_config()
         self.json_extractor = json_extractor
         self.table_extractor = table_extractor 
