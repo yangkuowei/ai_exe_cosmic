@@ -31,7 +31,7 @@ class ModelConfig:
     base_url: str
     model_name: str
     api_key: Optional[str] = None
-    temperature: float = 1.3
+    temperature: float = 1.0
     max_tokens: int = 8192
     timeout: float = 30.0
     max_retries: int = 3
@@ -51,7 +51,7 @@ class ModelConfig:
             raise ConfigurationError("\n".join(errors))
 
 
-def load_model_config(provider: str = None, config_dir: str = None,model_name :str = None) -> ModelConfig:
+def load_model_config(provider: str = None, config_dir: str = None, model_name :str = None) -> ModelConfig:
     """加载指定供应商的模型配置
 
     Args:
@@ -109,7 +109,7 @@ def load_model_config(provider: str = None, config_dir: str = None,model_name :s
             base_url=base_url,
             model_name=model_name,
             api_key=api_key,
-            temperature=provider_config.get('temperature', 0.1),
+            temperature=provider_config.get('temperature', 0.9),
             max_tokens=provider_config.get('max_tokens', 8000),
             timeout=provider_config.get('timeout', 60.0),
             max_retries=provider_config.get('max_chat_count', 3)

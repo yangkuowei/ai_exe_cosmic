@@ -18,9 +18,26 @@ def process_excel(pipeline, context: ProcessingContext) -> bool:
         source_excel_path = os.path.join(output_path,FILE_NAME['temp_excel'])
         template_excel_path =  os.path.join(pipeline.out_template_base_dir, FILE_NAME['template_xlsx'])
         output_excel_path = os.path.join(output_path, context.stem+'-COSMIC.xlsx')
-        extracted_targets = '123'
-        extracted_necessity = '456'
-        success_excel_fill = process_excel_files(
+        
+        # Read and parse necessity file
+        necessity_file = os.path.join(output_path, FILE_NAME['necessity'])
+        with open(necessity_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # Extract targets section (between "一、 建设目标" and "二、 建设必要性")
+        targets_start = content.find("一、 建设目标") + len("一、 建设目标")
+        targets_end = content.find("二、 建设必要性")
+        extracted_targets = '\n'.join(
+            line.strip() 
+            for line in content[targets_start:targets_end].strip().split('\n'))
+        
+        # Extract necessity section (after "二、 建设必要性")
+        necessity_start = content.find("二、 建设必要性") + len("二、 建设必要性")
+        extracted_necessity = '\n'.join(
+            line.strip()
+            for line in content[necessity_start:].strip().split('\n'))
+
+        process_excel_files(
             source_excel_path=Path(source_excel_path),
             template_excel_path=Path(template_excel_path),
             output_excel_path=Path(output_excel_path),

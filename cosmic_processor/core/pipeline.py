@@ -32,6 +32,7 @@ class CosmicPipeline:
         self.max_workers = max_workers
         self.max_workers_analysis = max_workers
         self.model_config = load_model_config()
+        self.model_config_extraction = load_model_config("aliyun")
         self.json_extractor = json_extractor
         self.table_extractor = table_extractor 
         self.json_validator = json_validator

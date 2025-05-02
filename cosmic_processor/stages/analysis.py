@@ -11,21 +11,31 @@ from read_file_content import save_content_to_file
 from project_paths import FILE_NAME
 
 
-def _process_single_feature(pipeline, feature_data, requirement_data, output_path, index):
-    """Process a single feature point and save to temporary file"""
-    temp_file = os.path.join(output_path, f"requirement_analysis_part_{index}.json")
+def _process_feature_group(pipeline, group_features, requirement_data, output_path, group_index):
+    """Process a group of feature points and save to temporary file"""
+    temp_file = os.path.join(output_path, f"requirement_analysis_part_{group_index}.json")
     
     # Check if temp file already exists
     if os.path.exists(temp_file):
         pipeline.logger.info(f"部分文件已存在，跳过处理: {temp_file}")
         return temp_file
 
-    # Calculate cosmic lines for this feature
-    cosmic_lines = math.ceil(
-        (requirement_data['cosmic_total_lines'] * feature_data['workload_percentage']) / 100
-    )
+    # Calculate total cosmic lines for this group
+    cosmic_lines = 0
+    for feature in group_features:
+        cosmic_lines += math.ceil(
+            (requirement_data['cosmic_total_lines'] * feature['workload_percentage']) / 100
+        )
     
-    # Format the content
+    # Format the content with all features in group
+    features_content = []
+    for idx, feature in enumerate(group_features, 1):
+        features_content.append(
+            f"功能{idx}：{feature['feature_point']}\n"
+            f"方案：{feature['description']}\n"
+        )
+    
+    features_str = "\n".join(features_content)
     content = f"""需求名称:
 {requirement_data['requirement_name']}
 
@@ -33,9 +43,7 @@ def _process_single_feature(pipeline, feature_data, requirement_data, output_pat
 {requirement_data['requirement_background']}
 
 需求解决方案:
-功能1：{feature_data['feature_point']}
-方案：{feature_data['description']}
-
+{features_str}
 cosmic总行数: 
 {cosmic_lines}"""
 
@@ -52,7 +60,7 @@ cosmic总行数:
     os.makedirs(output_path, exist_ok=True)
     
     # Save to temporary file with correct path
-    temp_filename = f"requirement_analysis_part_{index}.json"
+    temp_filename = f"requirement_analysis_part_{group_index}.json"
     save_content_to_file(
         file_name=temp_filename,
         output_dir=output_path,
@@ -83,18 +91,39 @@ def process_requirement_analysis(pipeline, context: ProcessingContext) -> bool:
         # 读取需求文档内容
         requirement_data = json.loads(context.stage_data['requirement_extraction'])
 
-        # Process each feature concurrently
+        # Calculate workload for each feature and group them
+        feature_groups = []
+        current_group = []
+        current_workload = 0
+        
+        for feature in requirement_data['solution_details']:
+            workload = math.ceil(
+                (requirement_data['cosmic_total_lines'] * feature['workload_percentage']) / 100
+            )
+            
+            if current_workload + workload > 50 and current_group:
+                feature_groups.append(current_group)
+                current_group = [feature]
+                current_workload = workload
+            else:
+                current_group.append(feature)
+                current_workload += workload
+        
+        if current_group:
+            feature_groups.append(current_group)
+
+        # Process feature groups concurrently
         with ThreadPoolExecutor(max_workers=pipeline.max_workers_analysis) as executor:
             futures = []
-            for idx, feature in enumerate(requirement_data['solution_details']):
+            for group_idx, group in enumerate(feature_groups):
                 futures.append(
                     executor.submit(
-                        _process_single_feature,
+                        _process_feature_group,
                         pipeline,
-                        feature,
+                        group,
                         requirement_data,
                         output_path,
-                        idx
+                        group_idx
                     )
                 )
 

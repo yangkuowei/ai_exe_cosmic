@@ -186,31 +186,6 @@ def validate_cosmic_table(markdown_table_str: str, table_rows: Optional[int] = N
     for i, row in enumerate(parsed_data):
         table_rows_with_index.append({"index": i, "data": row, "row_num": i + 3}) # row_num 是原始 markdown 行号
 
-    # --- 校验全表数据属性组唯一性 (新增校验) ---
-    if headers_match:
-        attr_group_row_mapping = defaultdict(list)  # 存储属性组到行号的映射
-        for row_info in table_rows_with_index:
-            attributes_str = row_info["data"].get("数据属性", "").strip()
-            if attributes_str:
-                attr_group_row_mapping[attributes_str].append(row_info["row_num"])
-
-        # 检查重复属性组
-        seen_attr_groups = set()
-        duplicate_groups = set()
-        for attr_group in attr_group_row_mapping:
-            if attr_group in seen_attr_groups:
-                duplicate_groups.add(attr_group)
-            seen_attr_groups.add(attr_group)
-
-        # 为每个重复属性组添加错误信息
-        for attr_group in duplicate_groups:
-            row_nums = attr_group_row_mapping[attr_group]
-            # 错误提示：数据属性组在全表重复
-            final_errors.append(
-                f"数据属性组重复错误: 属性组 '{attr_group}' 在以下行重复出现: {', '.join(map(str, row_nums))}。"
-                f"全表范围内的数据属性组必须唯一。请修改重复的属性组。"
-            )
-
     # --- 校验固定值 (强制规则 12) ---
     if headers_match: # 只有在表头正确时才能按列名校验
         for row_info in table_rows_with_index:
@@ -233,9 +208,16 @@ def validate_cosmic_table(markdown_table_str: str, table_rows: Optional[int] = N
 
     # --- 校验数据属性 (强制规则 11) ---
     if headers_match:
+        seen_attributes = set() # 用于检查数据属性的唯一性
+        attribute_locations: Dict[str, List[int]] = defaultdict(list) # 存储每个属性出现的行号
+
         for row_info in table_rows_with_index:
             row_num = row_info["row_num"]
             attributes_str = row_info["data"].get("数据属性", "").strip()
+
+            # 记录数据属性及其出现的行号
+            attribute_locations[attributes_str].append(row_num)
+
             if not attributes_str:
                 # 错误提示：数据属性不能为空 (隐含强制)
                 final_errors.append(f"数据属性错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 数据属性不能为空。请填写 3-10 个关键业务属性。")
@@ -259,6 +241,30 @@ def validate_cosmic_table(markdown_table_str: str, table_rows: Optional[int] = N
                 if ENGLISH_FIELD_REGEX.search(attr) and not re.match(r'^[A-Z0-9/]+$', attr):
                      # 错误提示：包含英文字段名
                      final_errors.append(f"数据属性格式错误 (数据行 {row_info['index']+1} (文件行 {row_num})): 属性 '{attr}' 包含英文或数据库字段名。要求使用中文业务术语。请检查并修正。")
+
+        # --- 校验数据属性唯一性 ---
+        for attribute, locations in attribute_locations.items():
+            if len(locations) > 1 and attribute: # 只有当属性非空且出现多次时才报错
+                location_str = ", ".join([str(loc) for loc in locations])
+                final_errors.append(f"数据属性重复错误: 数据属性 '{attribute}' 在文件行 {location_str} 重复出现。数据属性在表格中必须唯一。请确保每个数据属性值都是唯一的。")
+
+    # --- 校验数据组唯一性 (新增校验) ---
+    if headers_match:
+        seen_data_groups = set() # 用于检查数据组的唯一性
+        data_group_locations: Dict[str, List[int]] = defaultdict(list) # 存储每个数据组出现的行号
+
+        for row_info in table_rows_with_index:
+            row_num = row_info["row_num"]
+            data_group_str = row_info["data"].get("数据组", "").strip()
+
+            # 记录数据组及其出现的行号
+            data_group_locations[data_group_str].append(row_num)
+
+        # 校验数据组唯一性
+        for data_group, locations in data_group_locations.items():
+            if len(locations) > 1 and data_group: # 只有当数据组非空且出现多次时才报错
+                location_str = ", ".join([str(loc) for loc in locations])
+                final_errors.append(f"数据组重复错误: 数据组 '{data_group}' 在文件行 {location_str} 重复出现。数据组在表格中必须唯一。请确保每个数据组值都是唯一的。")
 
 
     # --- 校验子过程描述 (强制规则 8) ---
@@ -375,19 +381,44 @@ def validate_cosmic_table(markdown_table_str: str, table_rows: Optional[int] = N
 
             # 术语一致性 ("信息" vs "数据") 是建议性的，不在此处强制校验
 
+        # 全局校验子过程描述唯一性
+        all_sub_descs = []
+        for row_info in table_rows_with_index:
+            desc = row_info["data"].get("子过程描述", "").strip()
+            if desc:  # 只检查非空描述
+                all_sub_descs.append((desc, row_info["row_num"]))
+
+        desc_counts = defaultdict(list)
+        for desc, row_num in all_sub_descs:
+            desc_counts[desc].append(row_num)
+
+        for desc, locations in desc_counts.items():
+            if len(locations) > 1:
+                location_str = ", ".join(map(str, locations))
+                final_errors.append(
+                    f"子过程描述全局重复错误: 子过程描述 '{desc}' 在文件行 {location_str} 重复出现。整个表格中子过程描述必须唯一。请修改重复的描述以体现差异。")
+
     # 数据属性差异性 (EW/ERX) 是建议性的，不在此处强制校验
 
     # --- 校验表格行数 (如果提供了预期行数) ---
     if table_rows is not None and parsed_data:
         actual_rows = len(parsed_data)
         min_rows = int(table_rows * 0.7)  # 10% lower bound
-        max_rows = int(table_rows * 1.1)  # 10% upper bound
-        
+        max_rows = int(table_rows * 1.2)  # 10% upper bound
+
         if not (min_rows <= actual_rows <= max_rows):
-            final_errors.append(
-                f"表格行数错误: 预期行数约为 {table_rows} (允许±10%浮动)，实际行数为 {actual_rows}。"
-                f"请检查表格内容是否符合功能过程数量要求。"
-            )
+            if actual_rows < min_rows:
+                diff = min_rows - actual_rows
+                final_errors.append(
+                    f"表格行数错误: 预期行数约为 {table_rows} (允许范围 {min_rows}-{max_rows})，实际行数为 {actual_rows}。"
+                    f"建议增加约 {diff} 行。"
+                )
+            else:
+                diff = actual_rows - max_rows
+                final_errors.append(
+                    f"表格行数错误: 预期行数约为 {table_rows} (允许范围 {min_rows}-{max_rows})，实际行数为 {actual_rows}。"
+                    f"建议减少约 {diff} 行。"
+                )
 
     # --- 返回结果 ---
     is_valid = not final_errors

@@ -52,7 +52,7 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
     FUR_WORKLOAD_FLUCTUATION: float = 0.10  # +/- 10%
 
     # 功能过程总数与工作量比例基准和浮动比例
-    PROCESS_COUNT_WORKLOAD_RATIO: float = 1 / 3
+    PROCESS_COUNT_WORKLOAD_RATIO: float = 2 / 5
     PROCESS_COUNT_FLUCTUATION: float = 0.05  # +/- 5%
 
     """
@@ -263,10 +263,10 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
         if not (min_expected_processes <= total_process_count <= max_expected_processes):
             if total_process_count < min_expected_processes:
                 diff = min_expected_processes - total_process_count
-                errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能过程总数量应在 {min_expected_processes}-{max_expected_processes} 个左右 (约为工作量的1/3)。当前总共识别出 {total_process_count} 个功能过程，需要增加 {diff} 个功能过程。请检查功能过程的拆分是否足够细化。")
+                errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能过程总数量应在 {min_expected_processes}-{max_expected_processes} 个左右 (约为工作量的2/5)。当前总共识别出 {total_process_count} 个功能过程，需要增加 {diff} 个功能过程。请检查功能过程的拆分是否足够细化。")
             else:
                 diff = total_process_count - max_expected_processes
-                errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能过程总数量应在 {min_expected_processes}-{max_expected_processes} 个左右 (约为工作量的1/3)。当前总共识别出 {total_process_count} 个功能过程，需要减少 {diff} 个功能过程。请检查功能过程的合并是否合理。")
+                errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能过程总数量应在 {min_expected_processes}-{max_expected_processes} 个左右 (约为工作量的2/5)。当前总共识别出 {total_process_count} 个功能过程，需要减少 {diff} 个功能过程。请检查功能过程的合并是否合理。")
 
             errors.append('**推荐内容**: **多写查询类的功能过程**，少写操作类的功能过程')
     # 返回结果

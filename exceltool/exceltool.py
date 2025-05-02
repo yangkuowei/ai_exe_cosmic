@@ -10,7 +10,7 @@ import logging # 导入日志库
 
 # 初始化日志
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARN)
 logger.propagate = False  # 阻止传播到root logger
 handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -19,7 +19,7 @@ logger.addHandler(handler)
 
 # --- 默认样式配置 ---
 DEFAULT_TARGET_FONT = Font(name='微软雅黑', size=11)
-DEFAULT_TARGET_ALIGNMENT = Alignment(horizontal='center', vertical='center', wrap_text=True)
+DEFAULT_TARGET_ALIGNMENT = Alignment(vertical='center', wrap_text=True)
 DEFAULT_TARGET_START_ROW = 5 # 目标工作表从此行开始填充
 DEFAULT_SOURCE_START_ROW = 2 # 源工作表从此行开始读取（假设标题在第1行）
 
@@ -35,30 +35,33 @@ def parse_initiator_receiver(text: str, key: str) -> str:
 def map_source_col_to_target_col_for_merge(source_col_index):
     """将源列索引映射到目标列索引，专用于合并逻辑。"""
     # 基于新的数据映射规则：
-    # 源列1（需求名称、发起者、接收者）-> 目标列1, 2, 3, 5。基于目标列5合并？
+    # 源列A(1) -> 目标列A(1)
     if source_col_index == 1:
-        return 5 # 基于源列1的合并来合并目标列5
-    # 源列2 -> 目标列4
+        return 1
+    # 源列B(2) -> 目标列E(5)
     elif source_col_index == 2:
-        return 4 # 基于源列2的合并来合并目标列4
-    # 源列3 -> 目标列6
+        return 5
+    # 源列C(3) -> 目标列D(4)
     elif source_col_index == 3:
-        return 6 # 基于源列3的合并来合并目标列6
-    # 源列4 -> 目标列7
+        return 4
+    # 源列D(4) -> 目标列F(6)
     elif source_col_index == 4:
-        return 7 # 基于源列4的合并来合并目标列7
-    # 源列5 -> 目标列8
+        return 6
+    # 源列E(5) -> 目标列G(7)
     elif source_col_index == 5:
-        return 8 # 基于源列5的合并来合并目标列8
-    # 源列6 -> 目标列9
+        return 7
+    # 源列F(6) -> 目标列H(8)
     elif source_col_index == 6:
-        return 9 # 基于源列6的合并来合并目标列9
-    # 源列7 -> 目标列10
+        return 8
+    # 源列G(7) -> 目标列I(9)
     elif source_col_index == 7:
-        return 10 # 基于源列7的合并来合并目标列10
-    # 源列8 -> 目标列11
+        return 9
+    # 源列H(8) -> 目标列J(10)
     elif source_col_index == 8:
-        return 11 # 基于源列8的合并来合并目标列11
+        return 10
+    # 源列I(9) -> 目标列K(11)
+    elif source_col_index == 9:
+        return 11
     else:
         # 源列8之后的数据不映射用于传输
         return None
@@ -160,8 +163,8 @@ def process_excel_files(
             # 读取源列3到8用于目标列6到11
             source_cols_3_to_8 = [source_ws.cell(row=s_row_index, column=c).value for c in range(3, 9)] # C列到H列
 
-            initiator = parse_initiator_receiver(source_col1_val, "发起者")
-            receiver = parse_initiator_receiver(source_col1_val, "接收者")
+            initiator = 'CRM'
+            receiver = parse_initiator_receiver(source_col2_val, "接收者")
 
             # --- 2. 数据填充 ---
             # 目标列1：清理后的需求名称
@@ -174,9 +177,22 @@ def process_excel_files(
             target_ws.cell(row=current_target_row, column=4, value=source_col2_val)
             # 目标列5：源列1（原始值）
             target_ws.cell(row=current_target_row, column=5, value=source_col1_val)
-            # 目标列6-11：源列3-8
-            for i, val in enumerate(source_cols_3_to_8):
-                 target_ws.cell(row=current_target_row, column=6 + i, value=val) # 6+0=6, 6+1=7,... 6+4=10
+            # 目标列D(4): 源列C(3)
+            target_ws.cell(row=current_target_row, column=4, value=source_col3_val)
+            # 目标列E(5): 源列B(2)
+            target_ws.cell(row=current_target_row, column=5, value=source_col2_val)
+            # 目标列F(6): 源列D(4)
+            target_ws.cell(row=current_target_row, column=6, value=source_ws.cell(row=s_row_index, column=4).value)
+            # 目标列G(7): 源列E(5)
+            target_ws.cell(row=current_target_row, column=7, value=source_ws.cell(row=s_row_index, column=5).value)
+            # 目标列H(8): 源列F(6)
+            target_ws.cell(row=current_target_row, column=8, value=source_ws.cell(row=s_row_index, column=6).value)
+            # 目标列I(9): 源列G(7)
+            target_ws.cell(row=current_target_row, column=9, value=source_ws.cell(row=s_row_index, column=7).value)
+            # 目标列J(10): 源列H(8)
+            target_ws.cell(row=current_target_row, column=10, value=source_ws.cell(row=s_row_index, column=8).value)
+            # 目标列K(11): 源列I(9)
+            target_ws.cell(row=current_target_row, column=11, value=source_ws.cell(row=s_row_index, column=9).value)
 
 
             # 目标列12：固定值 "新增"

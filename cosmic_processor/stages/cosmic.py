@@ -73,26 +73,53 @@ def process_generate_cosmic(pipeline, context: ProcessingContext) -> bool:
         return False
 
 def _split_requirement_json(json_str: str) -> list:
-    """将需求JSON按triggeringEvents拆分为多个部分"""
+    """将需求JSON按processName数量(≤10)拆分为多个部分，保持triggeringEvents完整性"""
     data = json.loads(json_str)
     requirements = data['requirementAnalysis']['functionalUserRequirements']
     result = []
+    current_batch = []
+    current_count = 0
 
     for req in requirements:
         for event in req['triggeringEvents']:
-            # Create a new JSON structure for each event
-            new_req = {
-                'requirementAnalysis': {
-                    'customerRequirement': data['requirementAnalysis']['customerRequirement'],
-                    'customerRequirementWorkload': len(event['functionalProcesses']) * 3,
-                    'functionalUserRequirements': [{
-                        'description': req['description'],
-                        'triggeringEvents': [event]
-                    }]
-                }
-            }
-            result.append(new_req)
+            process_count = len(event['functionalProcesses'])
+            
+            # 如果当前批次为空或加入后不超过20，则加入当前批次
+            if not current_batch or current_count + process_count <= 10:
+                current_batch.append((req, event))
+                current_count += process_count
+            else:
+                # 当前批次已满，先保存
+                result.append(_create_batch_json(data, current_batch))
+                # 开始新批次
+                current_batch = [(req, event)]
+                current_count = process_count
+    
+    # 添加最后一批
+    if current_batch:
+        result.append(_create_batch_json(data, current_batch))
+    
     return result
+
+def _create_batch_json(data: dict, batch: list) -> dict:
+    """根据批次数据创建JSON结构"""
+    batch_events = []
+    total_processes = 0
+    
+    for req, event in batch:
+        batch_events.append({
+            'description': req['description'],
+            'triggeringEvents': [event]
+        })
+        total_processes += len(event['functionalProcesses'])
+    
+    return {
+        'requirementAnalysis': {
+            'customerRequirement': data['requirementAnalysis']['customerRequirement'],
+            'customerRequirementWorkload': total_processes * 3,
+            'functionalUserRequirements': batch_events
+        }
+    }
 
 def _merge_markdown_files(output_path: str) -> str:
     """合并所有part文件内容"""
