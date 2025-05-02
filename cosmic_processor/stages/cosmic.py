@@ -27,7 +27,7 @@ def process_generate_cosmic(pipeline, context: ProcessingContext) -> bool:
         event_parts = _split_requirement_json(context.stage_data['requirement_json'])
 
         # 使用线程池并行处理
-        with ThreadPoolExecutor(max_workers=pipeline.max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=pipeline.max_workers_analysis) as executor:
             futures = []
             for i, event_data in enumerate(event_parts, 1):
                 if i>1:
@@ -58,6 +58,13 @@ def process_generate_cosmic(pipeline, context: ProcessingContext) -> bool:
         for part_file in os.listdir(output_path):
             if part_file.startswith('cosmic_table_part_'):
                 os.remove(os.path.join(output_path, part_file))
+
+        save_content_to_file(
+            file_name=FILE_NAME['temp_excel'],
+            output_dir=output_path,
+            content=merged_content,
+            content_type="xlsx"
+        )
 
         return True
 

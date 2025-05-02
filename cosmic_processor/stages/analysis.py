@@ -84,7 +84,7 @@ def process_requirement_analysis(pipeline, context: ProcessingContext) -> bool:
         requirement_data = json.loads(context.stage_data['requirement_extraction'])
 
         # Process each feature concurrently
-        with ThreadPoolExecutor(max_workers=pipeline.max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=pipeline.max_workers_analysis) as executor:
             futures = []
             for idx, feature in enumerate(requirement_data['solution_details']):
                 futures.append(

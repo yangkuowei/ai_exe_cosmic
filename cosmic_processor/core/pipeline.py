@@ -2,7 +2,7 @@ import os
 import concurrent.futures
 from concurrent.futures import as_completed
 import logging
-from typing import Dict, Any, List, Optional, Tuple, Callable
+from typing import Optional, Tuple, Callable
 from pathlib import Path
 
 from ai_common import load_model_config
@@ -15,7 +15,7 @@ from cosmic_processor.stages import (
     requirement_extraction,
     process_requirement_analysis,
     process_generate_cosmic,
-    process_necessity
+    process_necessity, process_excel
 )
 
 class CosmicPipeline:
@@ -52,6 +52,7 @@ class CosmicPipeline:
         self.cosmic_prompt = self._read_prompt(TEMPLATE_PATHS["cosmic_table"])
         self.necessity_prompt = self._read_prompt(TEMPLATE_PATHS["necessity"])
         self.output_base_dir = TEMPLATE_PATHS.get("output_base_dir", "out_put_files")
+        self.out_template_base_dir = TEMPLATE_PATHS.get("out_template_base_dir", "out_template")
 
     def _read_prompt(self, path: str) -> str:
         """读取提示词文件"""
@@ -69,6 +70,7 @@ class CosmicPipeline:
             process_requirement_analysis,
             process_generate_cosmic,
             process_necessity,
+            process_excel,
             self._post_process
         ]
 

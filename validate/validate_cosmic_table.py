@@ -50,7 +50,7 @@ FIXED_VALUES = {
 
 # 数据属性规则 (强制规则 11)
 MIN_ATTR = 3
-MAX_ATTR = 10
+MAX_ATTR = 20
 ATTR_SEPARATOR = r'[，,、]' # 支持中文逗号、英文逗号和顿号
 # 用于检查数据属性是否只包含中文、字母、数字和指定分隔符的正则
 VALID_ATTR_CHAR_REGEX = re.compile(r'^[a-zA-Z0-9\u4e00-\u9fa5，,、\s]+$')
@@ -185,6 +185,31 @@ def validate_cosmic_table(markdown_table_str: str, table_rows: Optional[int] = N
     table_rows_with_index = []
     for i, row in enumerate(parsed_data):
         table_rows_with_index.append({"index": i, "data": row, "row_num": i + 3}) # row_num 是原始 markdown 行号
+
+    # --- 校验全表数据属性组唯一性 (新增校验) ---
+    if headers_match:
+        attr_group_row_mapping = defaultdict(list)  # 存储属性组到行号的映射
+        for row_info in table_rows_with_index:
+            attributes_str = row_info["data"].get("数据属性", "").strip()
+            if attributes_str:
+                attr_group_row_mapping[attributes_str].append(row_info["row_num"])
+
+        # 检查重复属性组
+        seen_attr_groups = set()
+        duplicate_groups = set()
+        for attr_group in attr_group_row_mapping:
+            if attr_group in seen_attr_groups:
+                duplicate_groups.add(attr_group)
+            seen_attr_groups.add(attr_group)
+
+        # 为每个重复属性组添加错误信息
+        for attr_group in duplicate_groups:
+            row_nums = attr_group_row_mapping[attr_group]
+            # 错误提示：数据属性组在全表重复
+            final_errors.append(
+                f"数据属性组重复错误: 属性组 '{attr_group}' 在以下行重复出现: {', '.join(map(str, row_nums))}。"
+                f"全表范围内的数据属性组必须唯一。请修改重复的属性组。"
+            )
 
     # --- 校验固定值 (强制规则 12) ---
     if headers_match: # 只有在表头正确时才能按列名校验

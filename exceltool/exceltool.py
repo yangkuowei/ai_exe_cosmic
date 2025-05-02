@@ -8,8 +8,14 @@ from openpyxl.worksheet.datavalidation import DataValidation # 导入数据验�
 from openpyxl.drawing.image import Image # 导入 Image 类用于插入图片
 import logging # 导入日志库
 
-# 设置日志记录器
+# 初始化日志
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.propagate = False  # 阻止传播到root logger
+handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 # --- 默认样式配置 ---
 DEFAULT_TARGET_FONT = Font(name='微软雅黑', size=11)
