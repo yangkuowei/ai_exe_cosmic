@@ -21,7 +21,7 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
         "重置", "分页", "排序", "适配", "开发", "部署", "迁移", "安装",
         "存储", "缓存", "校验", "验证", "是否", "判断", "组装报文", "构建报文",
         '临时表', '内存', '缓存', '检验', '校验', '分析',
-        '判断', '解析', '后台', '数据库读取', '接口返回', '接口调用', '生成一条','维护','配置','执行' ,"系统","检索"
+        '判断', '解析', '后台', '数据库读取', '接口返回', '接口调用', '生成一条','维护','配置','执行' ,"系统","检索","政策"
         # 注意: 保存/输入/读取/输出/存储/缓存 在特定上下文可能允许，但提示词已列为避免，
         # 这里按最严格的“绝对禁止”列表来校验，如果需要放宽，可以从这里移除。
     }
@@ -57,7 +57,7 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
     PROCESS_COUNT_FLUCTUATION: float = 0.05  # +/- 5%
 
 
-    MAX_SIMILARITY: float = 0.7  # 文本相似度
+    MAX_SIMILARITY: float = 0.8  # 文本相似度
 
     MAX_FUNCTIONAL_PROCESSES: int = 6  # 每个触发事件的最大功能过程数量
 
@@ -131,11 +131,34 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
         if not (min_expected_furs <= num_furs <= max_expected_furs):
              errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能用户需求(FUR)数量应在 {min_expected_furs}-{max_expected_furs} 个左右 (每个FUR约{FUR_WORKLOAD_TARGET}工作量)。当前数量为 {num_furs} 个，请检查FUR的拆分是否合理。")
 
-    fb_flag = False
+    # First collect all event descriptions with their full paths
+    all_events = []
     for i, fur in enumerate(furs):
         if not isinstance(fur, dict):
             errors.append(f"JSON校验不通过，功能用户需求列表中的第 {i+1} 项不是有效的JSON对象格式。")
             continue # 跳过对此项的后续检查
+
+        fur_ref = f"功能用户需求列表第 {i+1} 项"
+        triggering_events = fur.get("triggeringEvents", [])
+        
+        for j, event in enumerate(triggering_events):
+            if not isinstance(event, dict):
+                continue
+                
+            event_desc = event.get("eventDescription", "")
+            if event_desc and isinstance(event_desc, str):
+                all_events.append({
+                    "desc": event_desc,
+                    "fur_idx": i,
+                    "event_idx": j,
+                    "fur_ref": fur_ref,
+                    "event_ref": f"{fur_ref} 的触发事件列表第 {j+1} 项"
+                })
+
+    fb_flag = False
+    for i, fur in enumerate(furs):
+        if not isinstance(fur, dict):
+            continue # Already checked above
 
         # 4.2 校验FUR描述 (`description`)
         fur_desc = fur.get("description")
@@ -180,16 +203,6 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
                 # 校验唯一性 (与FUR描述)
                 if event_desc in seen_fur_descs:
                      errors.append(f"JSON校验不通过，{event_ref} 的描述 '{event_desc}' 与某个功能用户需求的描述相同了。请修改触发事件描述，使其与功能用户需求描述不同。")
-                
-                # 校验同FUR下事件描述相似度
-                for other_event in triggering_events[:j]:
-                    other_desc = other_event.get("eventDescription", "")
-                    if other_desc and isinstance(other_desc, str):
-                        similarity = calculate_levenshtein_similarity(event_desc, other_desc)
-                        if similarity > MAX_SIMILARITY:
-                            errors.append(f"JSON校验不通过，{event_ref} 的描述 '{event_desc}' 与同FUR下的触发事件描述 '{other_desc}' 相似度过高 ({similarity:.2f})。相似度超过{MAX_SIMILARITY}，请重新生成更明确区分的触发事件描述。")
-                
-                # 提示词要求了命名格式，但自动化校验困难，这里省略对格式的严格检查
 
             # 4.3.2 校验参与者 (`participants`)
             participants_str = event.get("participants")
@@ -263,7 +276,7 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
                          if other_name and isinstance(other_name, str):
                              similarity = calculate_levenshtein_similarity(process_name, other_name)
                              if similarity > MAX_SIMILARITY:
-                                 errors.append(f"JSON校验不通过，{process_ref} 的名称 '{process_name}' 与功能过程名称 '{other_name}' 相似度过高 ({similarity:.2f})。相似度超过{MAX_SIMILARITY}，请重新生成更明确区分的功能过程名称。")
+                                 errors.append(f"JSON校验不通过，{process_ref} 的名称 '{process_name}' 与功能过程名称 '{other_name}' 相似度过高 ({similarity:.2f})。相似度超过{MAX_SIMILARITY}，请重新生成更明确区分的、语义不同的功能过程名称。")
                      
                      # 校验禁用词
                      found_forbidden = []
@@ -297,5 +310,19 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
                 errors.append(f"JSON校验不通过，根据工作量 {workload}，预期的功能过程总数量应在 {min_expected_processes}-{max_expected_processes} 个左右 (约为工作量的2/5)。当前总共识别出 {total_process_count} 个功能过程，需要减少 {diff} 个功能过程。请检查功能过程的合并是否合理。")
 
             errors.append('**推荐内容**: **多写查询类的功能过程**，少写操作类的功能过程')
+    # 5.1 全局校验事件描述相似度
+    for i in range(len(all_events)):
+        for j in range(i+1, len(all_events)):
+            event1 = all_events[i]
+            event2 = all_events[j]
+            similarity = calculate_levenshtein_similarity(event1["desc"], event2["desc"])
+            if similarity > MAX_SIMILARITY:
+                errors.append(
+                    f"JSON校验不通过，{event1['event_ref']} 的描述 '{event1['desc']}' "
+                    f"与 {event2['event_ref']} 的描述 '{event2['desc']}' "
+                    f"相似度过高 ({similarity:.2f})。相似度超过{MAX_SIMILARITY}，"
+                    "请重新生成更明确区分的、语义不同的触发事件描述。"
+                )
+
     # 返回结果
     return not errors, "\n".join(errors)

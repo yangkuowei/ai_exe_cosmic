@@ -1,6 +1,7 @@
 import re
 from collections import defaultdict
 from typing import Tuple, Dict, List, Any, Optional
+from cosmic_processor.utils.validators import calculate_levenshtein_similarity
 
 # --- 基于提示词规则定义的常量 ---
 
@@ -33,7 +34,7 @@ FORBIDDEN_KEYWORDS_SUBPROCESS_OTHER = {
     "读取", # 特指底层IO
     "获取", # 过于泛化时
     "输出", # 特指底层IO
-    "切换", "计算", "重置", "分页", "排序", "适配", "开发", "部署", "系统"
+    "切换", "计算", "重置", "分页", "排序", "适配", "开发", "部署", "系统","政策"
     "迁移", "安装", "存储", # 特指物理存储
     "调用" # 特指调用接口
 }
@@ -65,6 +66,9 @@ TEMPLATE_VERBS = {
     'W': ['保存', '更新', '删除'], # 允许多个，检查是否是其中之一
     'X': ['返回', '输出', '发送']  # 允许多个，检查是否是其中之一
 }
+
+SIMILARITY_THRESHOLD = 0.95
+
 
 # --- 辅助函数 ---
 
@@ -381,13 +385,14 @@ def validate_cosmic_table(markdown_table_str: str, table_rows: Optional[int] = N
 
             # 术语一致性 ("信息" vs "数据") 是建议性的，不在此处强制校验
 
-        # 全局校验子过程描述唯一性
+        # 全局校验子过程描述唯一性和相似度
         all_sub_descs = []
         for row_info in table_rows_with_index:
             desc = row_info["data"].get("子过程描述", "").strip()
             if desc:  # 只检查非空描述
                 all_sub_descs.append((desc, row_info["row_num"]))
 
+        # 检查重复描述
         desc_counts = defaultdict(list)
         for desc, row_num in all_sub_descs:
             desc_counts[desc].append(row_num)
@@ -397,6 +402,18 @@ def validate_cosmic_table(markdown_table_str: str, table_rows: Optional[int] = N
                 location_str = ", ".join(map(str, locations))
                 final_errors.append(
                     f"子过程描述全局重复错误: 子过程描述 '{desc}' 在文件行 {location_str} 重复出现。整个表格中子过程描述必须唯一。请修改重复的描述以体现差异。")
+
+        # 检查相似描述
+        checked_pairs = set()
+        for i, (desc1, row_num1) in enumerate(all_sub_descs):
+            for j, (desc2, row_num2) in enumerate(all_sub_descs[i+1:], i+1):
+                pair_key = frozenset({row_num1, row_num2})
+                if pair_key not in checked_pairs:
+                    similarity = calculate_levenshtein_similarity(desc1, desc2)
+                    if similarity > SIMILARITY_THRESHOLD:
+                        final_errors.append(
+                            f"子过程描述相似度过高: 行 {row_num1} 的描述 '{desc1}' 和行 {row_num2} 的描述 '{desc2}' 相似度为 {similarity:.2f} (阈值 {SIMILARITY_THRESHOLD})。请修改描述使其更明确区分。")
+                    checked_pairs.add(pair_key)
 
     # 数据属性差异性 (EW/ERX) 是建议性的，不在此处强制校验
 

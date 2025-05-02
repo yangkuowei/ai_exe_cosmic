@@ -52,3 +52,8 @@ def calculate_levenshtein_similarity(str1: str, str2: str) -> float:
     similarity_ratio = Levenshtein.ratio(str1, str2)
 
     return similarity_ratio
+
+# sentences = ["查询二级计费点优惠方案详情", "展示二级计费点优惠方案信息"]
+str1 = '你吃饭了没有'
+str2 = '我今天收到一个快递'
+print(calculate_levenshtein_similarity(str1,str2))
