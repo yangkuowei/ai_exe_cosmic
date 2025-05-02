@@ -3,6 +3,7 @@ import re
 from collections import defaultdict
 from math import ceil, floor
 from typing import Tuple, Dict, List, Any, Set
+from cosmic_processor.utils.validators import calculate_levenshtein_similarity
 
 
 def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
@@ -54,6 +55,11 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
     # 功能过程总数与工作量比例基准和浮动比例
     PROCESS_COUNT_WORKLOAD_RATIO: float = 2 / 5
     PROCESS_COUNT_FLUCTUATION: float = 0.05  # +/- 5%
+
+
+    MAX_SIMILARITY: float = 0.7  # 文本相似度
+
+    MAX_FUNCTIONAL_PROCESSES: int = 6  # 每个触发事件的最大功能过程数量
 
     """
     校验AI生成的COSMIC需求分析JSON字符串是否符合预定义的规则。
@@ -174,6 +180,15 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
                 # 校验唯一性 (与FUR描述)
                 if event_desc in seen_fur_descs:
                      errors.append(f"JSON校验不通过，{event_ref} 的描述 '{event_desc}' 与某个功能用户需求的描述相同了。请修改触发事件描述，使其与功能用户需求描述不同。")
+                
+                # 校验同FUR下事件描述相似度
+                for other_event in triggering_events[:j]:
+                    other_desc = other_event.get("eventDescription", "")
+                    if other_desc and isinstance(other_desc, str):
+                        similarity = calculate_levenshtein_similarity(event_desc, other_desc)
+                        if similarity > MAX_SIMILARITY:
+                            errors.append(f"JSON校验不通过，{event_ref} 的描述 '{event_desc}' 与同FUR下的触发事件描述 '{other_desc}' 相似度过高 ({similarity:.2f})。相似度超过{MAX_SIMILARITY}，请重新生成更明确区分的触发事件描述。")
+                
                 # 提示词要求了命名格式，但自动化校验困难，这里省略对格式的严格检查
 
             # 4.3.2 校验参与者 (`participants`)
@@ -216,6 +231,10 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
                 errors.append(f"JSON校验不通过，{event_ref} 缺少 'functionalProcesses' 字段或其值不是列表。")
                 continue # 跳过过程检查
 
+            # 校验功能过程数量不超过6个
+            if len(functional_processes) > MAX_FUNCTIONAL_PROCESSES:
+                errors.append(f"JSON校验不通过，{event_ref} 的功能过程数量 ({len(functional_processes)}) 超过{MAX_FUNCTIONAL_PROCESSES}个。每个触发事件的功能过程不能超过{MAX_FUNCTIONAL_PROCESSES}个，请考虑拆分该触发事件。")
+
             total_process_count += len(functional_processes) # 累加功能过程总数
 
             for k, process in enumerate(functional_processes):
@@ -237,6 +256,15 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
                      if process_name in seen_process_names:
                          errors.append(f"JSON校验不通过，{process_ref} 的名称 '{process_name}' 与之前的某个功能过程名称重复了。请确保每个功能过程名称都是唯一的，并考虑是否需要合并相似的过程。")
                      seen_process_names.add(process_name)
+                     
+                     # 校验功能过程名称相似度
+                     for other_process in functional_processes[:k]:
+                         other_name = other_process.get("processName", "")
+                         if other_name and isinstance(other_name, str):
+                             similarity = calculate_levenshtein_similarity(process_name, other_name)
+                             if similarity > MAX_SIMILARITY:
+                                 errors.append(f"JSON校验不通过，{process_ref} 的名称 '{process_name}' 与功能过程名称 '{other_name}' 相似度过高 ({similarity:.2f})。相似度超过{MAX_SIMILARITY}，请重新生成更明确区分的功能过程名称。")
+                     
                      # 校验禁用词
                      found_forbidden = []
                      for word in FORBIDDEN_PROCESS_WORDS:
