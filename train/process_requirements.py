@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # --- 配置 ---
 # 输入目录：包含各个子文件夹，每个子文件夹下有 requirement_extraction.txt
-INPUT_BASE_DIR = '../out_put_files/杨扩威'
+INPUT_BASE_DIR = '../out_put_files/杨扩威20250504'
 # 输出文件：用于追加保存处理后的 JSONL 数据
 OUTPUT_JSONL_FILE = '../out_put_files/processed_data.jsonl'
 # 输入文件名

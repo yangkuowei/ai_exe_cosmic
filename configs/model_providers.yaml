@@ -1,5 +1,5 @@
 # 默认使用的模型提供商（可选）
-# qwen2.5-72b-instruct qwq-32b QwQ-32B-AWQ  Qwen2.5-14B-Instruct-1M
+# qwen2.5-72b-instruct qwq-32b QwQ-32B-AWQ  Qwen2.5-14B-Instruct-1M   gemini-2.0-flash-thinking-exp-01-21 gemini-2.0-flash
 default_provider: 302
 
 providers:
@@ -21,7 +21,7 @@ providers:
 
   aliyun:
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    model_name: qwen-max
+    model_name: qwq-32b
     env_mapping:
       api_key: DASHSCOPE_API_KEY
       base_url: ALIYUN_BASE_URL
@@ -56,6 +56,13 @@ providers:
       api_key: SILICONFLOW_API_KEY
       base_url: SILICONFLOW_BASE_URL
       model_name: SILICONFLOW_MODEL
+  gemini:
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+    model_name: gemini-2.0-flash-exp
+    env_mapping:
+      api_key: GEMINI_API_KEY
+      base_url: GEMINI_BASE_URL
+      model_name: GEMINI_MODEL
   vllm:
     base_url: http://192.168.3.108:8080/v1/
     model_name: QwQ-32B

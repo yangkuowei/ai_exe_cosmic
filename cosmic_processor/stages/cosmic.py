@@ -85,7 +85,7 @@ def _split_requirement_json(json_str: str) -> list:
             process_count = len(event['functionalProcesses'])
             
             # 如果当前批次为空或加入后不超过20，则加入当前批次
-            if not current_batch or current_count + process_count <= 5:
+            if not current_batch or current_count + process_count <= 10:
                 current_batch.append((req, event))
                 current_count += process_count
             else:

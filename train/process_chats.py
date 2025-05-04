@@ -13,7 +13,7 @@ INPUT_DIR = Path("../chat_history")
 # 输出文件：处理后的 JSONL 数据将追加到此文件
 OUTPUT_FILE = INPUT_DIR / "chat_processed_data.jsonl"
 # 单行 JSONL 数据的最大长度限制
-MAX_LENGTH = 4000
+MAX_LENGTH = 2048
 
 # --- 规则常量 ---
 
@@ -27,15 +27,10 @@ FINAL_USER_VALIDATION_TEXT = "你真是太棒了"
 # 目标 system 内容映射
 TARGET_SYSTEM_CONTENT = {
     SYSTEM_PROMPT_KEYWORD_COSMIC_EXPERT: (
-        "你是一位精通COSMIC功能点度量方法的专家分析师。"
-        "你的核心任务是根据用户提供的软件需求原始描述（可能包含需求名称、需求背景、详细解决方案等），"
-        "严格遵循COSMIC方法论的核心原则和用户指定的规则，进行细致的分析和拆分，"
-        "最终以**精确的JSON格式**输出分析结果。"
+        "你是COSMIC功能点专家分析师，根据用户需求描述，严格按COSMIC方法论和用户规则分析拆分，并以精确JSON格式输出结果"
     ),
     SYSTEM_PROMPT_KEYWORD_REQ_ANALYST: (
-        "你是一名专业的软件需求分析师，精通COSMIC（ISO/IEC 19761:2011）功能点度量方法。"
-        "你的核心任务是根据用户提供的功能分析结果（JSON格式）**，"
-        "严格遵循下述规则，生成详细、准确且格式规范的COSMIC度量表格（Markdown格式）"
+        "你是软件需求分析师，精通COSMIC功能点度量，根据用户提供的JSON，严格按规则生成规范的Markdown格式COSMIC度量表格"
     )
 }
 
@@ -186,6 +181,9 @@ def process_chat_history():
                     # 格式化为 JSONL 字符串
                     jsonl_line = format_to_jsonl(system, input_text, output_text)
 
+                    jsonl_line = jsonl_line.replace(' ','')
+                    jsonl_line = jsonl_line.replace('---','-')
+
                     if jsonl_line:
                         # 校验长度
                         if len(jsonl_line) <= MAX_LENGTH:
@@ -229,7 +227,7 @@ def process_chat_history():
     print(f"阶段 2：将结果按顺序追加写入 {OUTPUT_FILE.name}...")
     try:
         # 以追加模式打开输出文件，使用 utf-8 编码
-        with open(OUTPUT_FILE, 'a', encoding='utf-8') as outfile:
+        with open(OUTPUT_FILE, 'w', encoding='utf-8') as outfile:
             # 首先写入所有 "软件需求分析师" 的记录
             if req_analyst_lines:
                 print(f"  正在写入 {len(req_analyst_lines)} 条 '需求分析师' 记录...")

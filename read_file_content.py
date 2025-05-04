@@ -1,11 +1,9 @@
 # 标准库导入
-import os
 import re
 import logging
 
 from pathlib import Path
 from typing import Optional, Union, List
-import docx
 # 第三方库导入
 import pandas as pd
 from docx import Document
@@ -13,7 +11,14 @@ from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.shared import Pt, RGBColor
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
+
+import os
+import platform
 import subprocess
+import tempfile
+import time
+import shutil # 用于查找可执行文件和删除目录
+
 
 # 文件操作
 
@@ -367,51 +372,6 @@ def merge_temp_files(temp_files: List[Path]) -> str:
     return "\n".join(full_content)
 
 
-def read_word_document(file_path: str) -> str:
-    """
-    读取 Word 文档内容（支持 .doc 和 .docx 格式）
-
-    参数:
-        file_path: Word 文件路径
-
-    返回:
-        文档文本内容
-
-    依赖:
-        - .docx 文件: pip install python-docx
-        - .doc  文件: 需安装 antiword (Linux/macOS: `brew install antiword`, Ubuntu: `sudo apt-get install antiword`)
-    """
-
-    def read_doc_file(path):
-        import win32com.client as win32
-        word = win32.gencache.EnsureDispatch('Word.Application')
-        doc = word.Documents.Open(path)
-        content = doc.Content.Text
-        doc.Close()
-        word.Quit()
-        return content
-
-
-    if file_path.endswith('.docx'):
-        # 读取 .docx 文件
-        doc = Document(file_path)
-        content = '\n'.join(paragraph.text for paragraph in doc.paragraphs)
-
-    elif file_path.endswith('.doc'):
-        # 读取 .doc 文件（依赖 antiword）
-        try:
-            content = read_doc_file(file_path)
-        except FileNotFoundError:
-            raise RuntimeError("读取 .doc 文件需要安装 antiword，请执行：sudo apt-get install antiword")
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"读取失败: {e.stderr}")
-    else:
-        raise ValueError("仅支持 .doc 和 .docx 格式")
-
-    return process_text(content)
-
-
-
 def process_text(content):
     """
     数据清洗
@@ -425,7 +385,7 @@ def process_text(content):
     """
 
     markers = [
-        "业务流程（必填）",
+        "能力复用评估",
         "业务流程图/时序图（如涉及，必填）"
     ]
     # 特殊字符 U+FFFD (REPLACEMENT CHARACTER)
@@ -487,27 +447,10 @@ def process_text(content):
     else:
         logging.warning("未找到足够的匹配行，不执行删除操作")
 
+
+
+
     return processed_content
-
-import os
-import platform
-import subprocess
-import tempfile
-import time
-import shutil # 用于查找可执行文件和删除目录
-
-
-# --- .docx 读取库 ---
-try:
-    from docx import Document
-except ImportError:
-    logging.error("需要 'python-docx' 库。请运行 'pip install python-docx'")
-    exit(1) # 核心依赖缺失，直接退出
-
-# --- 文本处理函数 (示例) ---
-def process_text(text):
-    """简单的文本后处理，例如去除首尾空格"""
-    return text.strip()
 
 # --- Linux .doc 转 .docx (使用 LibreOffice) ---
 def _check_libreoffice():
@@ -788,8 +731,8 @@ def read_word_document(file_path: str) -> str:
         except Exception as e:
             raise RuntimeError(f"读取 .docx 文件 '{docx_to_read}' 时失败: {e}") from e
 
-        return process_text(content)
-
+        content = process_text(content)
+        return content
     finally:
         # --- 清理临时文件和目录 ---
         # 优先删除具体的临时 docx 文件（如果路径已知且存在）

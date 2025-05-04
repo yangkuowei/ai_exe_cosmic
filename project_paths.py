@@ -2,7 +2,7 @@ from typing import List
 
 # 配置开发人员白名单
 DEVELOPERS: List[str] = [
-    "杨小扩",
+    "杨扩威",
     "张三",
     "李四"
 ]

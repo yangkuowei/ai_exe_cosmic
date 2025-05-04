@@ -100,6 +100,16 @@ class ThreadLocalChatHistoryManager:
             self.logger.error(f"获取聊天上下文失败: {str(e)}")
             return []
 
+    def remove_session_history(self, session_id: str, index: int) -> None:
+        try:
+            history = self.get_session_history(session_id).messages
+            message = history.pop(index)
+            self.logger.debug(f"已删除记忆 {session_id}: {message}")
+        except Exception as e:
+            self.logger.error(f"删除记忆失败: {str(e)}")
+            raise
+
+
 class StreamCallback(BaseCallbackHandler):
     def __init__(self, history_manager, session_id):
         self.token_count = 0
@@ -124,7 +134,7 @@ class LangChainCosmicTableGenerator:
             callbacks=[BaseCallbackHandler()],
             temperature=config.temperature,
             max_tokens=config.max_tokens,
-            extra_body={"enable_thinking": True}
+            #extra_body={"enable_thinking": True}
         )
 
     def _validate_config(self, config: ModelConfig):
