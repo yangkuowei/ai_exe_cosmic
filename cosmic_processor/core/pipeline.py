@@ -23,7 +23,7 @@ class CosmicPipeline:
 
     def __init__(
         self, 
-        max_workers: int = 12,
+        max_workers: int = 24,
         json_extractor: Callable[[str], str] = extract_json_from_text,
         table_extractor: Callable[[str], str] = extract_table_from_text,
         json_validator: Callable[[str], Tuple[bool, str]] = validate_requirement_analysis_json,

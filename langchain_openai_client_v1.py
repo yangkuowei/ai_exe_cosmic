@@ -4,7 +4,10 @@ import os
 import random
 import threading
 import time
-from typing import Callable, Tuple, Any, Optional, TypeVar
+from typing import Callable, Tuple, Any, Optional, TypeVar, Dict, List
+from uuid import UUID
+
+from langchain_core.outputs import LLMResult, Generation  # 导入 LLMResult
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.chat_history import (
@@ -26,6 +29,7 @@ logging.basicConfig(
 )
 base_logger = logging.getLogger(__name__)
 T = TypeVar('T')
+
 
 class ThreadLocalChatHistoryManager:
     """聊天历史管理类，每个实例独立"""
@@ -73,7 +77,7 @@ class ThreadLocalChatHistoryManager:
             self.logger.error(f"处理会话历史时出错: {str(e)}")
             raise
 
-    def get_chat_context(self, session_id: str, system_prompt: str = "") -> list:
+    def get_chat_context(self, session_id: str, is_valid: bool, system_prompt: str = "") -> list:
         try:
             history = self.get_session_history(session_id)
             messages = []
@@ -90,10 +94,16 @@ class ThreadLocalChatHistoryManager:
                     "content": msg.content,
                 })
 
-            messages.append({
-                "role": 'human',
-                "content": '你真是太棒了！',
-            })
+            if is_valid:
+                messages.append({
+                    "role": 'human',
+                    "content": '你真是太棒了！',
+                })
+            else:
+                messages.append({
+                    "role": 'human',
+                    "content": '你真是太蠢了！！',
+                })
 
             return messages
         except Exception as e:
@@ -104,7 +114,7 @@ class ThreadLocalChatHistoryManager:
         try:
             history = self.get_session_history(session_id).messages
             message = history.pop(index)
-            self.logger.debug(f"已删除记忆 {session_id}: {message}")
+            #self.logger.debug(f"已删除记忆 {session_id}: {message}")
         except Exception as e:
             self.logger.error(f"删除记忆失败: {str(e)}")
             raise
@@ -112,14 +122,30 @@ class ThreadLocalChatHistoryManager:
 
 class StreamCallback(BaseCallbackHandler):
     def __init__(self, history_manager, session_id):
-        self.token_count = 0
+        self.streaming_token_count = 0
         self.history_manager = history_manager
         self.session_id = session_id
+        self.last_prompt_tokens = 0
+        self.last_completion_tokens = 0
+        self.last_total_tokens = 0
+
+    def on_llm_start(
+            self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any
+    ) -> None:
+        self.streaming_token_count = 0
+        # 可选：打印部分输入 prompt 帮助调试 (注意隐私和长度)
+        # prompt_preview = prompts[0][:200] + "..." if prompts else "No prompt"
+        # self.history_manager.logger.debug(f"{self.session_id} LLM call started. Prompt preview: {prompt_preview}")
+        self.history_manager.logger.debug(f"{self.session_id} LLM call started.")
 
     def on_llm_new_token(self, token: str, **kwargs) -> None:
-        self.token_count += 1
-        if self.token_count % 100 == 0:
-            self.history_manager.logger.debug(f'{self.session_id}已处理{self.token_count}个token')
+        self.streaming_token_count += 1
+        # 减少打印频率，避免过多日志
+        if self.streaming_token_count % 100 == 0:
+            self.history_manager.logger.debug(
+                f'{self.session_id} 已处理 {self.streaming_token_count} 个 streaming token'
+            )
+
 
 class LangChainCosmicTableGenerator:
     def __init__(self, config: ModelConfig):
@@ -134,7 +160,7 @@ class LangChainCosmicTableGenerator:
             callbacks=[BaseCallbackHandler()],
             temperature=config.temperature,
             max_tokens=config.max_tokens,
-            #extra_body={"enable_thinking": True}
+            # extra_body={"enable_thinking": True}
         )
 
     def _validate_config(self, config: ModelConfig):
@@ -176,11 +202,10 @@ class LangChainCosmicTableGenerator:
         config = {"configurable": {"session_id": session_id}}
 
         self.chat.callbacks = [StreamCallback(history_manager, session_id)]
-
-        for attempt in range(max_chat_count + 1):
-            try:
+        is_valid = False
+        try:
+            for attempt in range(max_chat_count + 1):
                 history_manager.logger.info(f"session_id={session_id} 开始调用AI")
-
                 response = with_message_history.invoke(
                     [HumanMessage(content=requirement_content)],
                     config=config,
@@ -195,27 +220,30 @@ class LangChainCosmicTableGenerator:
                 is_valid, error = validator(extracted_data)
                 if is_valid:
                     history_manager.logger.info(f"本轮AI生成内容校验通过")
-                    chat_history_dir = os.path.join(os.path.dirname(__file__), 'chat_history')
-                    os.makedirs(chat_history_dir, exist_ok=True)
-                    history_file = os.path.join(chat_history_dir, f'{session_id}.json')
-
-                    chat_context = history_manager.get_chat_context(session_id, cosmic_ai_prompt)
-                    with open(history_file, 'w', encoding='utf-8') as f:
-                        json.dump(chat_context, f, ensure_ascii=False, indent=2)
-
-                    history_manager.logger.debug(f"聊天历史已保存到: {history_file}")
                     return extracted_data
-
                 if attempt == max_chat_count:
                     raise ValueError(f"验证失败：{error}")
 
                 requirement_content = self._build_retry_prompt(error)
-                history_manager.logger.info(f"第{attempt+1}次重试，更新请求内容")
+                history_manager.logger.info(f"第{attempt + 1}次重试，更新请求内容")
                 history_manager.logger.info(requirement_content)
 
-            except Exception as e:
-                history_manager.logger.error("生成过程中发生异常：%s", str(e))
-                raise RuntimeError("COSMIC表格生成失败") from e
+                messages = history_manager.get_session_history(session_id).messages
+                if len(messages) >=4 :
+                    history_manager.remove_session_history(session_id,1)
+                    history_manager.remove_session_history(session_id,1)
+        except Exception as e:
+            history_manager.logger.error("生成过程中发生异常：%s", str(e))
+            raise RuntimeError("COSMIC表格生成失败") from e
+        finally:
+            chat_history_dir = os.path.join(os.path.dirname(__file__), 'chat_history')
+            os.makedirs(chat_history_dir, exist_ok=True)
+            history_file = os.path.join(chat_history_dir, f'{session_id}.json')
+            chat_context = history_manager.get_chat_context(session_id, is_valid, cosmic_ai_prompt)
+            with open(history_file, 'w', encoding='utf-8') as f:
+                json.dump(chat_context, f, ensure_ascii=False, indent=2)
+
+            history_manager.logger.debug(f"聊天历史已保存到: {history_file}")
 
         return None
 
@@ -232,6 +260,7 @@ class LangChainCosmicTableGenerator:
             f"现在，请生成修正后的完整内容："
         )
 
+
 @ai_processor(max_retries=3)
 def call_ai(
         ai_prompt: str,
@@ -239,7 +268,7 @@ def call_ai(
         extractor: Callable[[str], Any],
         validator: Callable[[Any], Tuple[bool, str]],
         config: ModelConfig,
-        max_chat_count: int = 5
+        max_chat_count: int = 10
 ) -> str:
     history_manager = ThreadLocalChatHistoryManager()
     generator = LangChainCosmicTableGenerator(config=config)

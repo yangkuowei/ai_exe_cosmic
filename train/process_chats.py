@@ -13,7 +13,7 @@ INPUT_DIR = Path("../chat_history")
 # 输出文件：处理后的 JSONL 数据将追加到此文件
 OUTPUT_FILE = INPUT_DIR / "chat_processed_data.jsonl"
 # 单行 JSONL 数据的最大长度限制
-MAX_LENGTH = 2048
+MAX_LENGTH = 1800
 
 # --- 规则常量 ---
 
