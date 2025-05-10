@@ -163,6 +163,12 @@ class CosmicPipeline:
         match = re.search(r'```text\n(.*?)\n```', text, re.DOTALL)
         return match.group(1) if match else text
 
+    def _validate_workload(self, text: str) -> Tuple[bool, str]:
+        """验证JSON格式并检查每个功能点的工作量不超过50"""
+        from cosmic_processor.utils.validators import validate_workload
+        return validate_workload(text)
+
+
     def _validate_empty(self, text: str) -> Tuple[bool, str]:
         """空验证器"""
         return True, ''

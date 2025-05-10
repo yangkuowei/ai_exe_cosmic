@@ -15,6 +15,12 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
         "后台进程", "基础中心", "小屏", "短厅"
     }
 
+    # 功能用户分类规则中允许的参与者类型
+    ALLOWED_PARTICIPANT_R_TYPES: Set[str] = {
+        "订单中心", "账管中心", "产商品中心",
+        "后台进程", "基础中心"
+    }
+
     # 功能过程名称中绝对禁止的词语
     FORBIDDEN_PROCESS_WORDS: Set[str] = {
         "加载", "解析", "初始化", "点击按钮", "页面", "渲染", "切换", "计算",
@@ -59,7 +65,7 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
 
     MAX_SIMILARITY: float = 0.8  # 文本相似度
 
-    MAX_FUNCTIONAL_PROCESSES: int = 6  # 每个触发事件的最大功能过程数量
+    MAX_FUNCTIONAL_PROCESSES: int = 20  # 每个触发事件的最大功能过程数量
 
     """
     校验AI生成的COSMIC需求分析JSON字符串是否符合预定义的规则。
@@ -232,8 +238,8 @@ def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
                     if initiator_type not in ALLOWED_PARTICIPANT_TYPES:
                         errors.append(f"JSON校验不通过，{event_ref} 的 'participants' 中的发起者类型 '{initiator_type}' 不在允许的类型列表中 ({', '.join(ALLOWED_PARTICIPANT_TYPES)})。请修正。")
                     # 校验接收者类型
-                    if receiver_type not in ALLOWED_PARTICIPANT_TYPES:
-                         errors.append(f"JSON校验不通过，{event_ref} 的 'participants' 中的接收者类型 '{receiver_type}' 不在允许的类型列表中 ({', '.join(ALLOWED_PARTICIPANT_TYPES)})。请修正。")
+                    if receiver_type not in ALLOWED_PARTICIPANT_R_TYPES:
+                         errors.append(f"JSON校验不通过，{event_ref} 的 'participants' 中的接收者类型 '{receiver_type}' 不在允许的类型列表中 ({', '.join(ALLOWED_PARTICIPANT_R_TYPES)})。请修正。")
                     # 校验发起者和接收者不能相同
                     if initiator_type == receiver_type:
                          errors.append(f"JSON校验不通过，{event_ref} 的 'participants' 中发起者和接收者类型相同 ('{initiator_type}')。发起者和接收者不能是同一类型。请修正。")

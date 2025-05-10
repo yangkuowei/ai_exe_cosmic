@@ -9,6 +9,7 @@ from langchain_openai_client_v1 import call_ai
 from read_file_content import save_content_to_file
 from project_paths import FILE_NAME
 
+
 def process_generate_cosmic(pipeline, context: ProcessingContext) -> bool:
     """生成COSMIC表格阶段(并行处理)"""
     try:
@@ -30,11 +31,11 @@ def process_generate_cosmic(pipeline, context: ProcessingContext) -> bool:
         with ThreadPoolExecutor(max_workers=pipeline.max_workers_analysis) as executor:
             futures = []
             for i, event_data in enumerate(event_parts, 1):
-                if i>1:
+                if i > 1:
                     time.sleep(3)
                 futures.append(executor.submit(
                     _process_single_event,
-                    pipeline, 
+                    pipeline,
                     event_data,
                     output_path,
                     i
@@ -72,54 +73,34 @@ def process_generate_cosmic(pipeline, context: ProcessingContext) -> bool:
         pipeline.logger.error(f"生成表格失败: {str(e)}")
         return False
 
+
 def _split_requirement_json(json_str: str) -> list:
-    """将需求JSON按processName数量(≤10)拆分为多个部分，保持triggeringEvents完整性"""
+    """将需求JSON按functionalUserRequirements拆分为多个部分，保持triggeringEvents完整性"""
     data = json.loads(json_str)
     requirements = data['requirementAnalysis']['functionalUserRequirements']
     result = []
-    current_batch = []
-    current_count = 0
 
     for req in requirements:
-        for event in req['triggeringEvents']:
-            process_count = len(event['functionalProcesses'])
-            
-            # 如果当前批次为空或加入后不超过20，则加入当前批次
-            if not current_batch or current_count + process_count <= 10:
-                current_batch.append((req, event))
-                current_count += process_count
-            else:
-                # 当前批次已满，先保存
-                result.append(_create_batch_json(data, current_batch))
-                # 开始新批次
-                current_batch = [(req, event)]
-                current_count = process_count
-    
-    # 添加最后一批
-    if current_batch:
-        result.append(_create_batch_json(data, current_batch))
-    
+        # 每个functionalUserRequirements作为一个整体部分
+        result.append(_create_batch_json(data, req, req['triggeringEvents']))
+
     return result
 
-def _create_batch_json(data: dict, batch: list) -> dict:
-    """根据批次数据创建JSON结构"""
-    batch_events = []
-    total_processes = 0
-    
-    for req, event in batch:
-        batch_events.append({
-            'description': req['description'],
-            'triggeringEvents': [event]
-        })
-        total_processes += len(event['functionalProcesses'])
-    
+
+def _create_batch_json(data: dict, req: dict, events: list) -> dict:
+    """根据functionalUserRequirements创建JSON结构"""
+    workload = sum(len(event['functionalProcesses']) for event in events) * 3
     return {
         'requirementAnalysis': {
             'customerRequirement': data['requirementAnalysis']['customerRequirement'],
-            'customerRequirementWorkload': total_processes * 3,
-            'functionalUserRequirements': batch_events
+            'customerRequirementWorkload': workload,
+            'functionalUserRequirements': [{
+                'description': req['description'],
+                'triggeringEvents': events
+            }]
         }
     }
+
 
 def _merge_markdown_files(output_path: str) -> str:
     """合并所有part文件内容"""
@@ -139,6 +120,7 @@ def _merge_markdown_files(output_path: str) -> str:
                 full_content.extend(content[2:])
 
     return "\n".join(full_content)
+
 
 def _process_single_event(pipeline, event_data: dict, output_path: str, part_num: int) -> bool:
     """处理单个事件并生成markdown"""

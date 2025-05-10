@@ -1,11 +1,41 @@
 from typing import Tuple, Optional
-
+import json
+import math
 import Levenshtein
 
 
 def validate_empty(text: str) -> Tuple[bool, str]:
     """空验证器"""
     return True, ''
+
+
+def validate_workload(json_str: str) -> Tuple[bool, str]:
+    """
+    验证JSON格式并检查每个功能点的工作量不超过50
+    工作量 = (cosmic_total_lines*workload_percentage)/100 向上取整
+    """
+
+
+    max_workload = 40
+    try:
+        data = json.loads(json_str)
+        cosmic_total_lines = data.get('cosmic_total_lines', 0)
+
+        if not data.get('solution_details'):
+            return True, ''
+
+        for detail in data['solution_details']:
+            percentage = detail.get('workload_percentage', 0)
+            workload = math.ceil((cosmic_total_lines * percentage) / 100)
+            if workload > max_workload:
+                return False, f'功能点"{detail["feature_point"]}"的工作量{workload}（工作量=(cosmic_total_lines * percentage) / 100）超过{max_workload}，需要进一步拆分该功能点'
+
+        return True, ''
+    except json.JSONDecodeError:
+        return False, '无效的JSON格式'
+    except Exception as e:
+        return False, f'验证失败: {str(e)}'
+
 
 def validate_requirement_analysis_json(json_str: str) -> Tuple[bool, str]:
     """验证需求分析JSON"""

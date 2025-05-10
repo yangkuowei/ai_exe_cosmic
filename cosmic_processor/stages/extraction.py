@@ -30,7 +30,7 @@ def requirement_extraction(pipeline, context: ProcessingContext) -> bool:
         ai_prompt=pipeline.requirement_extraction_prompt,
         requirement_content=content,
         extractor=pipeline._extract_json_from_text,
-        validator=pipeline._validate_empty,
+        validator=pipeline._validate_workload,
         config=pipeline.model_config
     )
     # 保存结果

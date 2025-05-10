@@ -228,10 +228,10 @@ class LangChainCosmicTableGenerator:
                 history_manager.logger.info(f"第{attempt + 1}次重试，更新请求内容")
                 history_manager.logger.info(requirement_content)
 
-                messages = history_manager.get_session_history(session_id).messages
-                if len(messages) >=4 :
-                    history_manager.remove_session_history(session_id,1)
-                    history_manager.remove_session_history(session_id,1)
+                # messages = history_manager.get_session_history(session_id).messages
+                # if len(messages) >=4 :
+                #     history_manager.remove_session_history(session_id,1)
+                #     history_manager.remove_session_history(session_id,1)
         except Exception as e:
             history_manager.logger.error("生成过程中发生异常：%s", str(e))
             raise RuntimeError("COSMIC表格生成失败") from e
@@ -254,7 +254,7 @@ class LangChainCosmicTableGenerator:
             f"--- 问题开始 ---\n{error}\n--- 问题结束 ---\n\n"
             f"请仔细阅读上述问题，并根据要求修改你上次输出的内容。\n"
             f"**重要提示：**\n"
-            f"1.  **仅修改** 指出的问题部分。\n"
+            f"1.  **仅修改** 指出的问题部分。并且不需要备注修改了哪里\n"
             f"2.  保持所有 **未提及** 的内容 **完全不变**。\n"
             f"3.  **必须** 输出 **完整** 的、修改后的内容，而不是只输出修改的部分。\n\n"
             f"现在，请生成修正后的完整内容："
@@ -268,7 +268,7 @@ def call_ai(
         extractor: Callable[[str], Any],
         validator: Callable[[Any], Tuple[bool, str]],
         config: ModelConfig,
-        max_chat_count: int = 10
+        max_chat_count: int = 5
 ) -> str:
     history_manager = ThreadLocalChatHistoryManager()
     generator = LangChainCosmicTableGenerator(config=config)

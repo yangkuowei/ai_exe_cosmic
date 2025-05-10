@@ -101,7 +101,7 @@ def process_requirement_analysis(pipeline, context: ProcessingContext) -> bool:
                 (requirement_data['cosmic_total_lines'] * feature['workload_percentage']) / 100
             )
             
-            if current_workload + workload > 50 and current_group:
+            if current_workload + workload > 0 and current_group:
                 feature_groups.append(current_group)
                 current_group = [feature]
                 current_workload = workload
